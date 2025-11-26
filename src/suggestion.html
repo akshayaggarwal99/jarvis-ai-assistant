@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #3b82f6, #1e40af);
+            border-radius: 20px;
+            padding: 24px;
+            color: white;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            position: relative;
+            box-shadow: 
+                0 25px 50px rgba(0, 0, 0, 0.4),
+                0 0 0 1px rgba(255, 255, 255, 0.1),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(20px);
+            animation: slideInBounce 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        body.manual {
+            background: linear-gradient(135deg, #10b981, #059669);
+        }
+
+        body::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+            transition: left 0.6s;
+        }
+
+        body:hover::before {
+            left: 100%;
+        }
+
+        .suggestion-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            padding-right: 32px;
+        }
+
+        .suggestion-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 700;
+            font-size: 14px;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+        }
+
+        .suggestion-latency {
+            font-size: 11px;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-weight: 600;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .suggestion-text {
+            font-size: 14px;
+            line-height: 1.6;
+            color: rgba(255, 255, 255, 0.95);
+            font-weight: 500;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+        }
+
+        .close-suggestion {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: rgba(0, 0, 0, 0.3);
+            border: none;
+            color: rgba(255, 255, 255, 0.8);
+            cursor: pointer;
+            font-size: 16px;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(10px);
+        }
+
+        .close-suggestion:hover {
+            background: rgba(0, 0, 0, 0.5);
+            color: white;
+            transform: scale(1.1);
+        }
+
+        @keyframes slideInBounce {
+            0% {
+                transform: translateX(100%) scale(0.8);
+                opacity: 0;
+            }
+            60% {
+                transform: translateX(-10px) scale(1.05);
+            }
+            100% {
+                transform: translateX(0) scale(1);
+                opacity: 1;
+            }
+        }
+    </style>
+</head>
+<body>
+    <button class="close-suggestion" id="closeSuggestion">×</button>
+    <div class="suggestion-header">
+        <div class="suggestion-title" id="suggestionTitle">
+            💡 Auto Suggestion
+        </div>
+        <div class="suggestion-latency" id="suggestionLatency">0ms</div>
+    </div>
+    <div class="suggestion-text" id="suggestionText"></div>
+
+    <script>
+        // Sentry disabled in open-source build
+        const { ipcRenderer } = require('electron');
+        
+        const closeSuggestion = document.getElementById('closeSuggestion');
+        const suggestionTitle = document.getElementById('suggestionTitle');
+        const suggestionText = document.getElementById('suggestionText');
+        const suggestionLatency = document.getElementById('suggestionLatency');
+        
+        closeSuggestion.onclick = () => {
+            ipcRenderer.send('close-suggestion');
+        };
+        
+        // Auto-close on Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                ipcRenderer.send('close-suggestion');
+            }
+        });
+        
+        // Receive suggestion data
+        ipcRenderer.on('suggestion-data', (_, data) => {
+            suggestionText.textContent = data.suggestion;
+            suggestionLatency.textContent = `${data.latency?.total || 0}ms`;
+            
+            if (data.isManual) {
+                document.body.classList.add('manual');
+                suggestionTitle.textContent = '⬢ Manual Suggestion';
+            } else {
+                document.body.classList.remove('manual');
+                suggestionTitle.textContent = '◆ Auto Suggestion';
+            }
+        });
+    </script>
+</body>
+</html>

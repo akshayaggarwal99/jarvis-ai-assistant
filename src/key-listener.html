@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { margin: 0; padding: 0; background: transparent; }
+    </style>
+</head>
+<body>
+    <script>
+        // Sentry disabled in open-source build
+        
+        const { ipcRenderer } = require('electron');
+        let isHolding = false;
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Control' && !isHolding) {
+                console.log('Push-to-talk started (Ctrl held)');
+                isHolding = true;
+                ipcRenderer.send('push-to-talk-start');
+            }
+        });
+
+        document.addEventListener('keyup', (event) => {
+            if (event.key === 'Control' && isHolding) {
+                console.log('Push-to-talk stopped (Ctrl released)');
+                isHolding = false;
+                ipcRenderer.send('push-to-talk-stop');
+            }
+        });
+
+        // Keep window focused to receive global key events
+        setInterval(() => {
+            if (!document.hasFocus()) {
+                window.focus();
+            }
+        }, 100);
+    </script>
+</body>
+</html>

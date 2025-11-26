@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/index.tsx","./src/main.ts","./src/types.d.ts","./src/services/audio.ts","./src/services/jarvis-core.ts","./src/services/llm-service.ts","./src/services/mcp-client.ts","./src/services/whisper.ts"],"version":"5.8.3"}

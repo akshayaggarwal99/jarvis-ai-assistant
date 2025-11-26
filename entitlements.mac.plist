@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Audio input for voice dictation -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+  
+  <!-- Apple Events for system integration -->
+  <key>com.apple.security.automation.apple-events</key>
+  <true/>
+  
+  <!-- Network access for AI services -->
+  <key>com.apple.security.network.client</key>
+  <true/>
+  
+  <!-- Allow outgoing network connections -->
+  <key>com.apple.security.network.server</key>
+  <true/>
+  
+  <!-- File access -->
+  <key>com.apple.security.files.user-selected.read-write</key>
+  <true/>
+  
+  <!-- Full disk access for accessibility features -->
+  <key>com.apple.security.files.downloads.read-write</key>
+  <true/>
+  
+  <!-- Screen capture for accessibility -->
+  <key>com.apple.security.temporary-exception.shared-preference.read-write</key>
+  <string>com.apple.universalaccess</string>
+  
+  <!-- Disable sandbox for full functionality -->
+  <key>com.apple.security.app-sandbox</key>
+  <false/>
+  
+  <!-- Required for hardened runtime -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+  <true/>
+  
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  
+  <!-- Allow debugging for production issues -->
+  <key>com.apple.security.cs.debugger</key>
+  <true/>
+  
+  <!-- Accessibility permissions for function key monitoring -->
+  <key>com.apple.security.accessibility</key>
+  <true/>
+</dict>
+</plist>
