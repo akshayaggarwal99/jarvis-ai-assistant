@@ -1,0 +1,37 @@
+/* Draggable title bar */
+.title-bar {
+  -webkit-app-region: drag;
+  cursor: move;
+  position: relative;
+  padding: 8px;
+}
+
+/* Non-draggable elements within draggable area */
+.title-bar button, 
+.title-bar input,
+.title-bar .controls {
+  -webkit-app-region: no-drag;
+}
+
+/* Logo spacing */
+.jarvis-logo {
+  margin-top: 20px; /* Add space above the logo */
+  margin-bottom: 8px;
+}
+
+/* Window control buttons (close, minimize, maximize) */
+.window-controls {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+/* Resizable container - use with JavaScript implementation */
+.resizable {
+  min-width: 400px;
+  min-height: 300px;
+  max-width: 800px;
+  max-height: 600px;
+  resize: both;
+  overflow: hidden;
+}

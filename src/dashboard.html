@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Jarvis Dashboard</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+    <style type="text/tailwindcss">
+        :root {
+            --background-primary: #ffffff;
+            --background-secondary: #f8fafc;
+            --background-tertiary: #f1f5f9;
+            --background-accent: #e2e8f0;
+            --background-cta: #4f46e5;
+            --background-cta-hover: #4338ca;
+            --background-info: #f1f5f9;
+            --text-primary: #1e293b;
+            --text-secondary: #334155;
+            --text-tertiary: #64748b;
+            --text-accent: #4f46e5;
+            --text-on-cta: #ffffff;
+            --text-light: #94a3b8;
+            --border-primary: #e2e8f0;
+            --border-secondary: #cbd5e1;
+            --icon-primary: #475569;
+            --icon-secondary: #64748b;
+            --icon-accent: #fbbf24;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .material-icons-outlined {
+            font-family: 'Material Icons Outlined';
+            font-weight: normal;
+            font-style: normal;
+            font-size: 24px;
+            line-height: 1;
+            letter-spacing: normal;
+            text-transform: none;
+            display: inline-block;
+            white-space: nowrap;
+            word-wrap: normal;
+            direction: ltr;
+            -webkit-font-feature-settings: 'liga';
+            -webkit-font-smoothing: antialiased;
+        }
+    </style>
+</head>
+<body class="flex h-screen">
+    <aside class="w-72 bg-white/90 backdrop-blur-md border-r border-white/20 flex flex-col p-6 shadow-xl">
+        <div class="flex items-center space-x-3 mb-6">
+            <img alt="Jarvis logo" class="h-8 w-8" src="jarvis-logo.svg"/>
+            <span class="text-2xl font-bold text-gray-800">Jarvis</span>
+            <span class="bg-indigo-100 text-indigo-600 text-xs font-semibold px-2.5 py-0.5 rounded-full">PRO TRIAL</span>
+        </div>
+        <nav class="flex-grow space-y-2">
+            <a class="flex items-center space-x-3 px-4 py-2.5 text-gray-700 bg-white/70 rounded-lg font-medium shadow-sm" href="#">
+                <span class="material-icons-outlined text-gray-600">home</span>
+                <span>Home</span>
+            </a>
+            <a class="flex items-center space-x-3 px-4 py-2.5 text-gray-600 hover:bg-white/50 hover:text-gray-800 rounded-lg transition-all" href="#">
+                <span class="material-icons-outlined text-gray-500">menu_book</span>
+                <span>Dictionary</span>
+            </a>
+            <a class="flex items-center space-x-3 px-4 py-2.5 text-gray-600 hover:bg-white/50 hover:text-gray-800 rounded-lg transition-all" href="#">
+                <span class="material-icons-outlined text-gray-500">description</span>
+                <span>Notes</span>
+            </a>
+        </nav>
+        <div class="bg-white/60 backdrop-blur-sm p-5 rounded-lg mb-6 border border-white/30">
+            <div class="flex items-center justify-between mb-1">
+                <h3 class="text-sm font-semibold text-gray-700">Jarvis Pro Trial</h3>
+                <span class="material-icons-outlined text-amber-500 text-lg">emoji_events</span>
+            </div>
+            <p class="text-xs text-gray-600 mb-3">4 of 14 days used</p>
+            <div class="w-full bg-white/50 rounded-full h-1.5 mb-3">
+                <div class="bg-gradient-to-r from-blue-500 to-purple-500 h-1.5 rounded-full" style="width: 28%"></div>
+            </div>
+            <p class="text-xs text-gray-600 mb-3">Upgrade to Jarvis Pro before your trial ends</p>
+            <button id="explore-pro-btn" class="w-full bg-gradient-to-r from-blue-500 to-purple-500 text-white text-sm font-medium py-2.5 px-4 rounded-lg hover:from-blue-600 hover:to-purple-600 transition-all shadow-md">
+                Explore Pro
+            </button>
+        </div>
+        <div class="space-y-2">
+            <a class="flex items-center space-x-3 px-4 py-2.5 text-gray-600 hover:bg-white/50 hover:text-gray-800 rounded-lg transition-all" href="#">
+                <span class="material-icons-outlined text-gray-500">card_giftcard</span>
+                <span>Refer a friend</span>
+            </a>
+            <a class="flex items-center space-x-3 px-4 py-2.5 text-gray-600 hover:bg-white/50 hover:text-gray-800 rounded-lg transition-all" href="#">
+                <span class="material-icons-outlined text-gray-500">help_outline</span>
+                <span>Help</span>
+            </a>
+        </div>
+    </aside>
+    <main class="flex-1 flex flex-col">
+        <header class="bg-white/80 backdrop-blur-md border-b border-white/20 h-16 flex items-center justify-between px-8 shadow-sm">
+            <div class="flex items-center space-x-2 text-gray-500">
+                <button class="p-1.5 rounded hover:bg-white/30 transition-colors">
+                    <span class="material-icons-outlined text-lg">chevron_left</span>
+                </button>
+                <button class="p-1.5 rounded hover:bg-white/30 transition-colors">
+                    <span class="material-icons-outlined text-lg">chevron_right</span>
+                </button>
+            </div>
+            <div class="flex items-center space-x-4">
+                <button class="p-1.5 rounded-full hover:bg-white/30 text-gray-600 transition-colors">
+                    <span class="material-icons-outlined">notifications_none</span>
+                </button>
+                <button class="p-1.5 rounded-full hover:bg-white/30 text-gray-600 transition-colors">
+                    <span class="material-icons-outlined">settings</span>
+                </button>
+                <img alt="User avatar" class="h-8 w-8 rounded-full border-2 border-white/30" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCVKE0t_4B01Y-sIWczC9MMl0uvcKI2Ru2bwW0wlyMmPHY0Wzh4dDACTJZBT1dHixDYHIUunjrLvvOGUQFrIIZUIG6n__bCqSm7veY4EmatQ9ZquXbdm3MSW1gX9JUTQa8JVHA9X4HOad22VlIyJxRRw9NAupYJZVCvd_vZxu309mVVpsZoag3b7qJskFTZvmXzIeK437o-guupWevYlmqy9Y5PgZ-t-fKbkwMyAbR8IGVG09AxsBleQGuhNlVlg6Ex-h4QVTIOpk5s"/>
+            </div>
+        </header>
+        <div class="flex-1 p-8 overflow-y-auto">
+            <div class="flex items-center justify-between mb-8">
+                <h1 class="text-3xl font-semibold text-white">Welcome back, User</h1>
+                <div class="flex items-center space-x-6 text-sm text-white/80">
+                    <div class="flex items-center space-x-1.5">
+                        <span class="material-icons-outlined text-green-400 text-lg">calendar_today</span>
+                        <span id="streak-days">1 week</span>
+                    </div>
+                    <div class="flex items-center space-x-1.5">
+                        <span class="material-icons-outlined text-indigo-300 text-lg">edit</span>
+                        <span id="total-words">5,645 words</span>
+                    </div>
+                    <div class="flex items-center space-x-1.5">
+                        <span class="material-icons-outlined text-sky-300 text-lg">speed</span>
+                        <span id="avg-wpm">124 WPM</span>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white/20 backdrop-blur-md p-8 rounded-xl shadow-lg mb-10 flex items-center justify-between border border-white/30">
+                <div>
+                    <h2 class="text-2xl font-semibold text-white mb-2">Voice dictation in any app</h2>
+                    <p class="text-white/90 max-w-md">
+                        Hold down your configured hotkey <kbd class="bg-white/20 text-white px-1.5 py-0.5 rounded-md text-xs font-mono border border-white/30">Hotkey</kbd> and speak into any textbox. Experience seamless voice-to-text anywhere.
+                    </p>
+                </div>
+                <button class="bg-white text-purple-600 text-sm font-medium py-3 px-6 rounded-lg hover:bg-white/90 transition-all shadow-lg">
+                    Explore use cases
+                </button>
+            </div>
+            <div>
+                <h3 class="text-lg font-medium text-white mb-1">Recent activity</h3>
+                <p class="text-sm text-white/70 mb-6">TODAY</p>
+                <div class="space-y-1 bg-white/20 backdrop-blur-md rounded-lg shadow-lg border border-white/30" id="activity-list">
+                    <div class="flex items-center justify-between p-4 border-b border-white/20 hover:bg-white/10 rounded-t-lg transition-colors">
+                        <div class="flex items-center space-x-3">
+                            <span class="text-xs text-white/70">Loading...</span>
+                            <p class="text-sm text-white/90">Getting your activity...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    <script>
+        // Sentry disabled in open-source build
+        
+        async function loadDashboard() {
+            try {
+                console.log('📊 [Dashboard] Loading analytics data...');
+                const stats = await window.electronAPI.getStats();
+                
+                if (stats) {
+                    console.log('📊 [Dashboard] Received stats:', stats);
+                    document.getElementById('streak-days').textContent = `${stats.streakDays} day${stats.streakDays !== 1 ? 's' : ''}`;
+                    document.getElementById('total-words').textContent = `${stats.totalWords.toLocaleString()} words`;
+                    document.getElementById('avg-wpm').textContent = `${stats.averageWPM} WPM`;
+                    
+                    updateActivityList(stats);
+                } else {
+                    console.warn('📊 [Dashboard] No stats received');
+                    updateActivityList(null);
+                }
+            } catch (error) {
+                console.error('📊 [Dashboard] Failed to load analytics:', error);
+                updateActivityList(null);
+            }
+        }
+
+        // Set up real-time analytics updates
+        function setupRealTimeUpdates() {
+            if (window.electronAPI && window.electronAPI.onStatsUpdate) {
+                console.log('📊 [Dashboard] Setting up real-time stats listener');
+                window.electronAPI.onStatsUpdate((stats) => {
+                    console.log('📊 [Dashboard] Received real-time stats update:', stats);
+                    if (stats) {
+                        document.getElementById('streak-days').textContent = `${stats.streakDays} day${stats.streakDays !== 1 ? 's' : ''}`;
+                        document.getElementById('total-words').textContent = `${stats.totalWords.toLocaleString()} words`;
+                        document.getElementById('avg-wpm').textContent = `${stats.averageWPM} WPM`;
+                        updateActivityList(stats);
+                    }
+                });
+            } else {
+                console.warn('📊 [Dashboard] electronAPI not available for real-time updates');
+            }
+        }
+
+        function updateActivityList(stats) {
+            const activityList = document.getElementById('activity-list');
+            if (stats && stats.totalSessions > 0) {
+                activityList.innerHTML = `
+                    <div class="flex items-center justify-between p-4 border-b border-white/20 hover:bg-white/10 rounded-t-lg transition-colors">
+                        <div class="flex items-center space-x-3">
+                            <span class="text-xs text-white/70">Just now</span>
+                            <p class="text-sm text-white/90">Voice dictation completed</p>
+                        </div>
+                        <span class="material-icons-outlined text-white/60 text-lg">more_horiz</span>
+                    </div>
+                    <div class="flex items-center justify-between p-4 border-b border-white/20 hover:bg-white/10 transition-colors">
+                        <div class="flex items-center space-x-3">
+                            <span class="text-xs text-white/70">Today</span>
+                            <p class="text-sm text-white/90">Sessions completed: ${stats.totalSessions}</p>
+                        </div>
+                        <span class="material-icons-outlined text-white/60 text-lg">more_horiz</span>
+                    </div>
+                    <div class="flex items-center justify-between p-4 hover:bg-white/10 rounded-b-lg transition-colors">
+                        <div class="flex items-center space-x-3">
+                            <span class="text-xs text-white/70">Average</span>
+                            <p class="text-sm text-white/90">Speaking speed: ${stats.averageWPM} words per minute</p>
+                        </div>
+                        <span class="material-icons-outlined text-white/60 text-lg">more_horiz</span>
+                    </div>
+                `;
+            } else {
+                activityList.innerHTML = `
+                    <div class="flex items-center justify-between p-4 border-b border-white/20 hover:bg-white/10 rounded-t-lg transition-colors">
+                        <div class="flex items-center space-x-3">
+                            <span class="text-xs text-white/70">Tip</span>
+                            <p class="text-sm text-white/90">Press and hold your configured hotkey to start dictation in any text box</p>
+                        </div>
+                        <span class="material-icons-outlined text-white/60 text-lg">more_horiz</span>
+                    </div>
+                    <div class="flex items-center justify-between p-4 border-b border-white/20 hover:bg-white/10 transition-colors">
+                        <div class="flex items-center space-x-3">
+                            <span class="text-xs text-white/70">Shortcut</span>
+                            <p class="text-sm text-white/90">Use Cmd+Option+J to open this dashboard</p>
+                        </div>
+                        <span class="material-icons-outlined text-white/60 text-lg">more_horiz</span>
+                    </div>
+                    <div class="flex items-center justify-between p-4 hover:bg-white/10 rounded-b-lg transition-colors">
+                        <div class="flex items-center space-x-3">
+                            <span class="text-xs text-white/70">Privacy</span>
+                            <p class="text-sm text-white/90">Your voice data is processed securely</p>
+                        </div>
+                        <span class="material-icons-outlined text-white/60 text-lg">more_horiz</span>
+                    </div>
+                `;
+            }
+        }
+
+        // Initialize dashboard
+        console.log('📊 [Dashboard] Initializing dashboard...');
+        setupRealTimeUpdates();
+        loadDashboard();
+    </script>
+</body>
+</html>

@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            width: 100vw;
+            height: 100vh;
+            user-select: none;
+            position: relative;
+            overflow: hidden;
+            -webkit-app-region: no-drag;
+        }
+
+        /* Universal dark theme colors for all system themes */
+        :root {
+            --icon-bg: rgba(20, 20, 20, 0.95);
+            --icon-border: rgba(255, 255, 255, 0.2);
+            --icon-dots: rgba(255, 255, 255, 0.3);
+            --icon-dots-hover: rgba(255, 255, 255, 0.8);
+            --text-color: rgba(255, 255, 255, 0.9);
+        }
+
+        /* @media (prefers-color-scheme: light) {
+            :root {
+                --icon-bg: rgba(255, 255, 255, 0.95);
+                --icon-border: rgba(0, 0, 0, 0.2);
+                --icon-dots: rgba(0, 0, 0, 0.3);
+                --icon-dots-hover: rgba(0, 0, 0, 0.8);
+                --text-color: rgba(0, 0, 0, 0.9);
+            }
+        } */
+
+        .container {
+            position: fixed;
+            bottom: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            transition: all 0.3s ease;
+            cursor: pointer;
+            z-index: 999999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            -webkit-app-region: no-drag;
+        }
+
+        /* Simple bar at rest - increased size */
+        .bar {
+            width: 60px;
+            height: 16px;
+            background: var(--icon-bg);
+            border-radius: 8px;
+            border: 1px solid var(--icon-border);
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            -webkit-app-region: drag;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            padding: 0 10px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        /* Dots inside the bar - hidden at rest */
+        .rest-dot {
+            width: 4px;
+            height: 4px;
+            background: var(--icon-dots);
+            border-radius: 50%;
+            transition: all 0.3s ease;
+            opacity: 0;
+            transform: scale(0.5);
+        }
+
+        /* Hover state - show dots and expand */
+        .container:hover .bar {
+            width: 120px;
+            height: 22px;
+            background: var(--icon-bg);
+            border: 1px solid var(--icon-border);
+            gap: 8px;
+        }
+
+        .container:hover .rest-dot {
+            background: var(--icon-dots-hover);
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .hover-text {
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            margin-bottom: 8px;
+            color: var(--text-color);
+            font-size: 13px;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            font-weight: 500;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            white-space: nowrap;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        .container:hover .hover-text {
+            opacity: 1;
+        }
+
+        /* Recording state */
+        .recording-bar {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 140px;
+            height: 32px;
+            background: var(--icon-bg);
+            border-radius: 16px;
+            border: 1px solid var(--icon-border);
+            display: flex;
+            align-items: center;
+            padding: 0 12px;
+            gap: 10px;
+            backdrop-filter: blur(15px);
+            -webkit-app-region: drag;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .stop-button {
+            width: 12px;
+            height: 12px;
+            background: #ff4757;
+            border-radius: 3px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            flex-shrink: 0;
+            -webkit-app-region: no-drag;
+        }
+
+        .stop-button:hover {
+            background: #ff6b7a;
+            transform: scale(1.1);
+        }
+
+        .waves {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            flex: 1;
+            justify-content: center;
+            height: 20px;
+        }
+
+        .wave-bar {
+            width: 3px;
+            height: 6px;
+            background: var(--icon-dots-hover); /* Use theme-appropriate color for better visibility */
+            border-radius: 1.5px;
+            /* ⚡ Optimized for 60fps animations */
+            transition: height 0.1s ease-out;
+            will-change: height;
+            transform: translateZ(0); /* Force GPU acceleration */
+        }
+
+        /* Push-to-talk state (no stop button) */
+        .push-to-talk-bar {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 120px;
+            height: 32px;
+            background: var(--icon-bg);
+            border-radius: 16px;
+            border: 1px solid var(--icon-border);
+            display: flex;
+            align-items: center;
+            padding: 0 15px;
+            backdrop-filter: blur(15px);
+            -webkit-app-region: drag;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .push-to-talk-waves {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            width: 100%;
+            justify-content: center;
+            height: 18px;
+        }
+
+        /* Transcribing state */
+        .transcribing-bar {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80px;
+            height: 32px;
+            background: var(--icon-bg);
+            border-radius: 16px;
+            border: 1px solid var(--icon-border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 15px;
+            backdrop-filter: blur(15px);
+            -webkit-app-region: drag;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .loading-dots {
+            display: flex;
+            gap: 6px;
+        }
+
+        .loading-dot {
+            width: 6px;
+            height: 6px;
+            background: var(--icon-dots-hover);
+            border-radius: 50%;
+            animation: loadingPulse 1.4s infinite ease-in-out;
+        }
+
+        .loading-dot:nth-child(1) { animation-delay: -0.32s; }
+        .loading-dot:nth-child(2) { animation-delay: -0.16s; }
+        .loading-dot:nth-child(3) { animation-delay: 0s; }
+
+        @keyframes loadingPulse {
+            0%, 80%, 100% { 
+                transform: scale(0.6);
+                opacity: 0.4;
+            }
+            40% { 
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        /* Network Error state */
+        .network-error-bar {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            min-width: 140px;
+            height: 32px;
+            background: rgba(255, 59, 48, 0.95); /* Red background */
+            border-radius: 16px;
+            border: 1px solid rgba(255, 59, 48, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 15px;
+            backdrop-filter: blur(15px);
+            -webkit-app-region: drag;
+            box-shadow: 0 4px 12px rgba(255, 59, 48, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        .error-icon {
+            font-size: 14px;
+            margin-right: 6px;
+        }
+
+        .error-message {
+            font-size: 12px;
+            font-weight: 500;
+            color: white;
+            white-space: nowrap;
+        }
+
+        /* Hidden states */
+        .bar.hidden {
+            opacity: 0;
+            transform: scale(0.8);
+        }
+
+        .recording-bar.hidden {
+            opacity: 0;
+            transform: scale(0.8);
+        }
+
+        .push-to-talk-bar.hidden {
+            opacity: 0;
+            transform: scale(0.8);
+        }
+
+        .push-to-talk-bar.hidden {
+            opacity: 0;
+            transform: scale(0.8);
+        }
+
+        .transcribing-bar.hidden {
+            opacity: 0;
+            transform: scale(0.8);
+        }
+
+        .network-error-bar.hidden {
+            opacity: 0;
+            transform: scale(0.8);
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="container">
+        <div class="hover-text">Click to dictate</div>
+        
+        <!-- Simple bar at rest state -->
+        <div class="bar" id="bar">
+            <div class="rest-dot"></div>
+            <div class="rest-dot"></div>
+            <div class="rest-dot"></div>
+        </div>
+        
+        <!-- Manual recording state (with stop button) -->
+        <div class="recording-bar hidden" id="recordingBar">
+            <div class="stop-button" id="stopButton"></div>
+            <div class="waves" id="waves">
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+            </div>
+        </div>
+
+        <!-- Push-to-talk state (no stop button) -->
+        <div class="push-to-talk-bar hidden" id="pushToTalkBar">
+            <div class="push-to-talk-waves" id="pushToTalkWaves">
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+            </div>
+        </div>
+
+        <!-- Transcribing state -->
+        <div class="transcribing-bar hidden" id="transcribingBar">
+            <div class="loading-dots">
+                <div class="loading-dot"></div>
+                <div class="loading-dot"></div>
+                <div class="loading-dot"></div>
+            </div>
+        </div>
+
+        <!-- Network Error state -->
+        <div class="network-error-bar hidden" id="networkErrorBar">
+            <div class="error-icon">⚠️</div>
+            <div class="error-message" id="errorMessage">No Internet</div>
+        </div>
+    </div>
+
+    <script>
+        // Sentry disabled in open-source build
+        const { ipcRenderer } = require('electron');
+        
+        const container = document.getElementById('container');
+        const bar = document.getElementById('bar');
+        const recordingBar = document.getElementById('recordingBar');
+        const pushToTalkBar = document.getElementById('pushToTalkBar');
+        const transcribingBar = document.getElementById('transcribingBar');
+        const stopButton = document.getElementById('stopButton');
+        const waves = document.getElementById('waves');
+        const pushToTalkWaves = document.getElementById('pushToTalkWaves');
+        const waveBars = waves.querySelectorAll('.wave-bar');
+        const pushToTalkWaveBars = pushToTalkWaves.querySelectorAll('.wave-bar');
+        const networkErrorBar = document.getElementById('networkErrorBar');
+        const errorMessage = document.getElementById('errorMessage');
+        
+        let animationFrame;
+        let isRecording = false;
+        let isPushToTalk = false;
+        let isTranscribing = false;
+        let currentAudioLevel = 0;
+        let audioFeedbackEnabled = true; // Track audio feedback setting
+        
+        // ⚡ PRE-CREATED AUDIO CONTEXT for instant sound - no creation delay
+        let sharedAudioContext = null;
+        try {
+            sharedAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+        } catch (error) {
+            console.error('Failed to create AudioContext:', error);
+        }
+
+        // Sound effects
+        function playStartSound() {
+            console.log('🔊 [Waveform] playStartSound called, audioFeedbackEnabled:', audioFeedbackEnabled);
+            if (!audioFeedbackEnabled) return; // Respect audio feedback setting
+            
+            // ⚡ INSTANT AUDIO - Create or reuse audio context
+            if (!sharedAudioContext) {
+                try {
+                    sharedAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+                } catch (error) {
+                    console.error('Failed to create AudioContext during playback:', error);
+                    return;
+                }
+            }
+            
+            // ⚡ INSTANT AUDIO - Resume context if suspended and use shared context
+            if (sharedAudioContext.state === 'suspended') {
+                sharedAudioContext.resume();
+            }
+            
+            // Create a "buduppp" start sound with rising tones (very low volume)
+            const audioContext = sharedAudioContext;
+            
+            // First tone - low "bu"
+            const osc1 = audioContext.createOscillator();
+            const gain1 = audioContext.createGain();
+            osc1.connect(gain1);
+            gain1.connect(audioContext.destination);
+            osc1.frequency.setValueAtTime(350, audioContext.currentTime);
+            gain1.gain.setValueAtTime(0.01, audioContext.currentTime); // Reduced from 0.03 to 0.01 (extremely low)
+            gain1.gain.exponentialRampToValueAtTime(0.005, audioContext.currentTime + 0.08);
+            osc1.start(audioContext.currentTime);
+            osc1.stop(audioContext.currentTime + 0.08);
+
+            // Second tone - mid "du"
+            const osc2 = audioContext.createOscillator();
+            const gain2 = audioContext.createGain();
+            osc2.connect(gain2);
+            gain2.connect(audioContext.destination);
+            osc2.frequency.setValueAtTime(500, audioContext.currentTime + 0.05);
+            gain2.gain.setValueAtTime(0.008, audioContext.currentTime + 0.05); // Reduced from 0.025 to 0.008
+            gain2.gain.exponentialRampToValueAtTime(0.005, audioContext.currentTime + 0.13);
+            osc2.start(audioContext.currentTime + 0.05);
+            osc2.stop(audioContext.currentTime + 0.13);
+
+            // Third tone - high "ppp"
+            const osc3 = audioContext.createOscillator();
+            const gain3 = audioContext.createGain();
+            osc3.connect(gain3);
+            gain3.connect(audioContext.destination);
+            osc3.frequency.setValueAtTime(750, audioContext.currentTime + 0.1);
+            gain3.gain.setValueAtTime(0.006, audioContext.currentTime + 0.1); // Reduced from 0.02 to 0.006
+            gain3.gain.exponentialRampToValueAtTime(0.005, audioContext.currentTime + 0.2);
+            osc3.start(audioContext.currentTime + 0.1);
+            osc3.stop(audioContext.currentTime + 0.2);
+        }
+
+        function playStopSound() {
+            console.log('🔊 [Waveform] playStopSound called, audioFeedbackEnabled:', audioFeedbackEnabled);
+            if (!audioFeedbackEnabled || !sharedAudioContext) return; // Respect audio feedback setting
+            // Create a downward "poop" stop sound (very low volume)
+            const audioContext = sharedAudioContext;
+            
+            // First tone - high "po"
+            const osc1 = audioContext.createOscillator();
+            const gain1 = audioContext.createGain();
+            osc1.connect(gain1);
+            gain1.connect(audioContext.destination);
+            osc1.frequency.setValueAtTime(600, audioContext.currentTime);
+            osc1.frequency.exponentialRampToValueAtTime(400, audioContext.currentTime + 0.1);
+            gain1.gain.setValueAtTime(0.008, audioContext.currentTime); // Reduced from 0.025 to 0.008
+            gain1.gain.exponentialRampToValueAtTime(0.005, audioContext.currentTime + 0.15);
+            osc1.start(audioContext.currentTime);
+            osc1.stop(audioContext.currentTime + 0.15);
+
+            // Second tone - low "op"
+            const osc2 = audioContext.createOscillator();
+            const gain2 = audioContext.createGain();
+            osc2.connect(gain2);
+            gain2.connect(audioContext.destination);
+            osc2.frequency.setValueAtTime(350, audioContext.currentTime + 0.08);
+            osc2.frequency.exponentialRampToValueAtTime(250, audioContext.currentTime + 0.2);
+            gain2.gain.setValueAtTime(0.006, audioContext.currentTime + 0.08); // Reduced from 0.02 to 0.006
+            gain2.gain.exponentialRampToValueAtTime(0.005, audioContext.currentTime + 0.25);
+            osc2.start(audioContext.currentTime + 0.08);
+            osc2.stop(audioContext.currentTime + 0.25);
+        }
+
+        function animateWaves() {
+            if (!isRecording && !isPushToTalk) return;
+            
+            const currentWaveBars = isPushToTalk ? pushToTalkWaveBars : waveBars;
+            
+            // ⚡ Optimized animation with batch DOM updates
+            const fragment = document.createDocumentFragment();
+            
+            currentWaveBars.forEach((bar, index) => {
+                const baseHeight = 6;
+                const maxHeight = 14;
+                
+                // ⚡ INSTANT RESPONSE - Use raw audio level for maximum responsiveness
+                const normalizedLevel = Math.min(currentAudioLevel / 10, 1); // Further reduced threshold
+                
+                // ⚡ NO THRESHOLD - Always show some animation for immediate feedback
+                const time = Date.now() * 0.004; // Slightly faster animation
+                const phase = index * 0.4;
+                const variation = Math.sin(time + phase) * 0.6;
+                const randomVariation = (Math.random() - 0.5) * 1.0;
+                
+                const height = baseHeight + (normalizedLevel * (maxHeight - baseHeight)) + variation + randomVariation;
+                bar.style.height = Math.max(3, Math.min(maxHeight, height)) + 'px';
+            });
+            
+            // ⚡ Request next frame immediately for smoother animation
+            animationFrame = requestAnimationFrame(animateWaves);
+        }
+
+        function startRecording() {
+            if (isRecording || isPushToTalk) return;
+            isRecording = true;
+            
+            playStartSound();
+            
+            bar.classList.add('hidden');
+            recordingBar.classList.remove('hidden');
+            
+            animateWaves();
+            
+            ipcRenderer.send('start-dictation-manual');
+        }
+
+        function stopRecording() {
+            if (!isRecording) return;
+            isRecording = false;
+            
+            playStopSound();
+            
+            recordingBar.classList.add('hidden');
+            bar.classList.remove('hidden');
+            
+            if (animationFrame) {
+                cancelAnimationFrame(animationFrame);
+            }
+            
+            // Reset audio level and wave bars
+            currentAudioLevel = 0;
+            waveBars.forEach(bar => {
+                bar.style.height = '6px';
+            });
+            
+            ipcRenderer.send('stop-dictation-manual');
+        }
+
+        function startPushToTalk() {
+            if (isRecording || isPushToTalk) return;
+            
+            // ⚡ INSTANT AUDIO FEEDBACK FIRST - Play sound before ANY other processing
+            playStartSound();
+            
+            isPushToTalk = true;
+            
+            // ⚡ IMMEDIATE VISUAL FEEDBACK - Start animation instantly
+            bar.classList.add('hidden');
+            pushToTalkBar.classList.remove('hidden');
+            animateWaves();
+            
+            // ⚡ Start recording in background - don't wait for response
+            ipcRenderer.send('start-push-to-talk-recording');
+        }
+
+        function stopPushToTalk() {
+            if (!isPushToTalk) return;
+            isPushToTalk = false;
+            
+            // ⚡ IMMEDIATE VISUAL FEEDBACK - Stop animation instantly
+            pushToTalkBar.classList.add('hidden');
+            bar.classList.remove('hidden');
+            
+            if (animationFrame) {
+                cancelAnimationFrame(animationFrame);
+            }
+            
+            // Reset audio level and wave bars immediately
+            currentAudioLevel = 0;
+            pushToTalkWaveBars.forEach(bar => {
+                bar.style.height = '6px';
+            });
+            
+            // Play the original synthesized stop sound
+            playStopSound();
+            
+            // Recording stop is handled by main process, no need to send another stop event
+        }
+
+        function cancelPushToTalk() {
+            console.log('🚫 [Waveform] Cancelling push-to-talk operation');
+            
+            // Reset both recording states
+            isRecording = false;
+            isPushToTalk = false;
+            
+            // Stop any ongoing animations
+            if (animationFrame) {
+                cancelAnimationFrame(animationFrame);
+                animationFrame = null;
+            }
+            
+            // Reset visual state to idle
+            pushToTalkBar.classList.add('hidden');
+            bar.classList.remove('hidden');
+            
+            // Reset audio level and wave bars immediately
+            currentAudioLevel = 0;
+            
+            // Reset both sets of wave bars
+            pushToTalkWaveBars.forEach(bar => {
+                bar.style.height = '6px';
+            });
+            waveBars.forEach(bar => {
+                bar.style.height = '6px';
+            });
+            
+            // Reset transcription text
+            if (transcriptionText) {
+                transcriptionText.textContent = '';
+            }
+            
+            // Stop any partial transcript updates
+            if (currentPartialText) {
+                currentPartialText = '';
+            }
+            
+            console.log('✅ [Waveform] Push-to-talk cancelled - UI reset to idle state');
+        }
+
+        // Click handlers
+        container.addEventListener('click', (e) => {
+            if (e.target === stopButton) {
+                stopRecording();
+            } else if (!isRecording) {
+                startRecording();
+            }
+        });
+
+        // Listen for audio level updates
+        ipcRenderer.on('audio-level', (event, level) => {
+            if (!isRecording && !isPushToTalk) return;
+            
+            // ⚡ INSTANT RESPONSE - Remove smoothing for maximum responsiveness
+            currentAudioLevel = Math.max(0, Math.min(100, level || 0));
+            
+            // ⚡ LOWER THRESHOLD - Show activity even for quiet speech
+            const displayLevel = currentAudioLevel > 1 ? currentAudioLevel : 0;
+            
+            // Also directly update bars for immediate response
+            const currentWaveBars = isPushToTalk ? pushToTalkWaveBars : waveBars;
+            currentWaveBars.forEach((bar, index) => {
+                const baseHeight = 6;
+                const maxHeight = 14;
+                
+                // ⚡ INCREASED SENSITIVITY - Normalize against lower value (15 instead of 30)
+                const normalizedLevel = Math.min(displayLevel / 15, 1);
+                
+                // Small variation between bars
+                const variation = index * 0.2;
+                const height = baseHeight + (normalizedLevel * (maxHeight - baseHeight)) + variation;
+                bar.style.height = Math.max(3, Math.min(maxHeight, height)) + 'px';
+            });
+        });
+
+        // Listen for push-to-talk events (Fn key hold)
+        ipcRenderer.on('push-to-talk-start', () => {
+            startPushToTalk();
+        });
+
+        ipcRenderer.on('push-to-talk-stop', () => {
+            stopPushToTalk();
+        });
+
+        ipcRenderer.on('push-to-talk-cancel', () => {
+            console.log('🚫 [Waveform] Push-to-talk cancelled - resetting to idle state');
+            cancelPushToTalk();
+        });
+
+        // Listen for manual dictation events (double-tap or click)
+        ipcRenderer.on('dictation-start', () => {
+            startRecording();
+        });
+
+        ipcRenderer.on('dictation-stop', () => {
+            stopRecording();
+        });
+
+        // Listen for transcription events
+        ipcRenderer.on('transcription-start', () => {
+            showTranscribing();
+        });
+
+        ipcRenderer.on('transcription-complete', () => {
+            hideTranscribing();
+        });
+
+        // Listen for audio feedback setting changes
+        ipcRenderer.on('audio-feedback-setting', (event, enabled) => {
+            console.log('🔊 [Waveform] Received audio feedback setting:', enabled);
+            audioFeedbackEnabled = enabled;
+        });
+
+        // Listen for network error events
+        ipcRenderer.on('show-network-error', (event, message) => {
+            console.log('🌐 [Waveform] Showing network error:', message);
+            showNetworkError(message);
+        });
+
+        // Listen for play-stop-sound command from main.ts
+        ipcRenderer.on('play-stop-sound', () => {
+            console.log('🔊 [Waveform] Stop sound is now played in main process for minimal latency');
+            // Sound is played directly in main process now
+        });
+
+        // ⚡ INSTANT MICROPHONE STATUS - Listen for immediate recording status updates
+        ipcRenderer.on('recording-status', (event, status) => {
+            console.log('🎤 [Waveform] Instant recording status update:', status);
+            
+            if (status.recording && status.active) {
+                // ⚡ IMMEDIATE VISUAL RESPONSE - Recording started
+                if (!isPushToTalk && !isRecording) {
+                    startPushToTalk();
+                }
+            } else if (!status.recording && !status.active) {
+                // ⚡ IMMEDIATE VISUAL RESPONSE - Recording stopped
+                if (isPushToTalk || isRecording) {
+                    stopPushToTalk();
+                }
+            }
+        });
+
+        function showNetworkError(message) {
+            // Hide other states
+            bar.classList.add('hidden');
+            recordingBar.classList.add('hidden');
+            pushToTalkBar.classList.add('hidden');
+            transcribingBar.classList.add('hidden');
+            
+            // Update message and show error bar
+            errorMessage.textContent = message;
+            networkErrorBar.classList.remove('hidden');
+            
+            // Auto-hide after 3 seconds
+            setTimeout(() => {
+                hideNetworkError();
+            }, 3000);
+        }
+
+        function hideNetworkError() {
+            networkErrorBar.classList.add('hidden');
+            
+            // Show default bar
+            bar.classList.remove('hidden');
+        }
+
+        function showTranscribing() {
+            isTranscribing = true;
+            
+            // Hide other states
+            bar.classList.add('hidden');
+            recordingBar.classList.add('hidden');
+            pushToTalkBar.classList.add('hidden');
+            networkErrorBar.classList.add('hidden');
+            
+            // Show transcribing
+            transcribingBar.classList.remove('hidden');
+        }
+
+        function hideTranscribing() {
+            isTranscribing = false;
+            
+            // Hide transcribing
+            transcribingBar.classList.add('hidden');
+            
+            // Show default bar
+            bar.classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
