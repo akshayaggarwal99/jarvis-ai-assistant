@@ -480,11 +480,14 @@ async function activateOverlaysAndShortcuts() {
       Logger.info('◆ [Overlays] Suggestion window already exists');
     }
     
-    // Show the waveform window (it's created with show: false)
+    // Show the waveform window only if showWaveform setting is enabled
+    const currentSettings = appSettings.getSettings();
     const waveformWindow = getWaveformWindow();
-    if (waveformWindow) {
+    if (waveformWindow && currentSettings.showWaveform !== false) {
       Logger.info('◉ [Overlays] Showing waveform window...');
       waveformWindow.show();
+    } else if (waveformWindow) {
+      Logger.info('◉ [Overlays] Waveform window hidden per user settings');
     }
     
     // Register shortcuts and start monitoring

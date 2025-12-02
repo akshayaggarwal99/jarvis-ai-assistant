@@ -13,6 +13,8 @@ interface AppSettings {
   localWhisperModel: string; // Selected local Whisper model (tiny.en, base.en, small.en, etc.)
   privacyConsentGiven: boolean; // User has explicitly consented to third-party data processing
   privacyConsentDate?: string; // When consent was given
+  userName?: string; // User's name for email signatures
+  showWaveform: boolean; // Show/hide waveform window during recording
   // API Keys (stored locally, never uploaded)
   openaiApiKey?: string;
   deepgramApiKey?: string;
@@ -50,7 +52,8 @@ export class AppSettingsService {
       useDeepgramStreaming: true,
       useLocalWhisper: false, // Off by default, user can enable for offline mode
       localWhisperModel: 'tiny.en', // Default to fastest English model
-      privacyConsentGiven: false // User must explicitly consent
+      privacyConsentGiven: false, // User must explicitly consent
+      showWaveform: true // Show waveform by default
     };
   }
 

@@ -147,6 +147,18 @@ export class SettingsIPCHandlers {
           this.restartHotkeyMonitoring(250);
         }
         
+        // Handle showWaveform changes - show/hide waveform window immediately
+        if ('showWaveform' in updates) {
+          if (this.waveformWindow && !this.waveformWindow.isDestroyed()) {
+            if (updates.showWaveform) {
+              Logger.info('[SettingsIPC] Waveform enabled - window will show on next recording');
+            } else {
+              this.waveformWindow.hide();
+              Logger.info('[SettingsIPC] Waveform disabled - window hidden');
+            }
+          }
+        }
+        
         Logger.success('[SettingsIPC] Settings updated successfully');
         return true;
       } catch (error) {

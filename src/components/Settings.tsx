@@ -20,6 +20,8 @@ const Settings: React.FC = () => {
   const [aiPostProcessing, setAiPostProcessing] = useState(true);
   const [useLocalWhisper, setUseLocalWhisper] = useState(false);
   const [localWhisperModel, setLocalWhisperModel] = useState('tiny.en');
+  const [userName, setUserName] = useState('');
+  const [showWaveform, setShowWaveform] = useState(true);
   
   // API Keys state
   const [openaiApiKey, setOpenaiApiKey] = useState('');
@@ -46,6 +48,7 @@ const Settings: React.FC = () => {
     { key: 'fn', label: 'Function (fn)', description: 'Push-to-talk - behavior varies by keyboard/settings' },
     { key: 'option', label: 'Option (⌥)', description: 'Push-to-talk - left or right side' },
     { key: 'control', label: 'Control (⌃)', description: 'Push-to-talk - bottom left corner' },
+    { key: 'command', label: 'Command (⌘)', description: 'Push-to-talk - left or right Command key' },
   ];
 
   // Get display label for hotkey
@@ -74,6 +77,8 @@ const Settings: React.FC = () => {
           setAiPostProcessing(appSettings.aiPostProcessing);
           setUseLocalWhisper(appSettings.useLocalWhisper ?? false);
           setLocalWhisperModel(appSettings.localWhisperModel ?? 'tiny.en');
+          setUserName(appSettings.userName ?? '');
+          setShowWaveform(appSettings.showWaveform ?? true);
         }
         
         // Load API keys
@@ -264,6 +269,36 @@ const Settings: React.FC = () => {
     }
   };
 
+  const handleUserNameChange = async (newName: string) => {
+    try {
+      const electronAPI = (window as any).electronAPI;
+      setUserName(newName);
+      
+      if (electronAPI && electronAPI.appUpdateSettings) {
+        await electronAPI.appUpdateSettings({ userName: newName });
+      }
+    } catch (error) {
+      console.error('Failed to update user name:', error);
+    }
+  };
+
+  const handleShowWaveformToggle = async () => {
+    try {
+      setIsSaving(true);
+      const newValue = !showWaveform;
+      const electronAPI = (window as any).electronAPI;
+      
+      if (electronAPI && electronAPI.appUpdateSettings) {
+        await electronAPI.appUpdateSettings({ showWaveform: newValue });
+        setShowWaveform(newValue);
+      }
+    } catch (error) {
+      console.error('Failed to update waveform settings:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleSaveApiKeys = async () => {
     try {
       setApiKeysSaving(true);
@@ -303,6 +338,31 @@ const Settings: React.FC = () => {
       <div className="mb-8">
         <h1 className={`text-2xl font-medium ${theme.text.primary} mb-2`}>Settings</h1>
         <p className={theme.text.secondary}>Configure your Jarvis experience</p>
+      </div>
+
+      {/* User Profile */}
+      <div className={`${theme.glass.primary} ${theme.radius.xl} p-6 ${theme.shadow}`}>
+        <h3 className={`font-medium ${theme.text.primary} mb-6`}>User Profile</h3>
+        
+        <div className="space-y-4">
+          {/* User Name */}
+          <div>
+            <label className={`block text-sm font-medium ${theme.text.primary} mb-2`}>
+              Your Name
+            </label>
+            <input
+              type="text"
+              value={userName}
+              onChange={(e) => handleUserNameChange(e.target.value)}
+              placeholder="Enter your name for email signatures"
+              className={`w-full bg-black/40 rounded-xl px-4 py-3 ${theme.text.primary} border border-white/20 focus:border-white/40 focus:outline-none transition-colors text-sm placeholder-white/30`}
+              style={{ backgroundColor: 'rgba(0, 0, 0, 0.4)' }}
+            />
+            <p className={`text-xs ${theme.text.tertiary} mt-2`}>
+              This name will be used for email signatures when you dictate emails
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Voice & Hotkeys */}
@@ -345,6 +405,26 @@ const Settings: React.FC = () => {
             >
               <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform ${
                 audioFeedback ? 'translate-x-6' : 'translate-x-0.5'
+              } ${theme.shadow.lg}`} />
+            </button>
+          </div>
+
+          {/* Show Waveform */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className={`font-medium ${theme.text.primary} mb-1`}>Show Waveform</h4>
+              <p className={`text-sm ${theme.text.tertiary}`}>Display visual waveform window while recording</p>
+            </div>
+            <button
+              onClick={handleShowWaveformToggle}
+              className={`relative w-12 h-6 rounded-full transition-all duration-200 ${
+                showWaveform 
+                  ? `${theme.glass.secondary} border border-white/20` 
+                  : `${theme.glass.secondary} border border-white/10`
+              }`}
+            >
+              <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform ${
+                showWaveform ? 'translate-x-6' : 'translate-x-0.5'
               } ${theme.shadow.lg}`} />
             </button>
           </div>
