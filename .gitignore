@@ -111,3 +111,10 @@ scripts/notarization/*.log
 scripts/*
 build/*
 build/Makefile
+
+# Xcode user data
+xcuserdata/
+*.xcuserstate
+
+# Build artifacts
+build/

@@ -50,10 +50,11 @@ This is what open source is supposed to be.
 
 ## Download
 
-| Chip | Link |
-|------|------|
-| 🍎 Apple Silicon | [Download DMG (M1/M2/M3/M4)](https://github.com/akshayaggarwal99/jarvis-ai-assistant/releases/latest) |
-| 💻 Intel Mac | [Download DMG (x64)](https://github.com/akshayaggarwal99/jarvis-ai-assistant/releases/latest) |
+| Platform | Link |
+|----------|------|
+| 🍎 **Mac** (Apple Silicon) | [Download DMG (M1/M2/M3/M4)](https://github.com/akshayaggarwal99/jarvis-ai-assistant/releases/latest) |
+| 💻 **Mac** (Intel) | [Download DMG (x64)](https://github.com/akshayaggarwal99/jarvis-ai-assistant/releases/latest) |
+| 📱 **iOS** (iPhone/iPad) | [TestFlight](./ios/README.md) *(NEW!)* |
 
 ✅ Signed & notarized by Apple → no scary warnings.
 

@@ -1,0 +1,247 @@
+import UIKit
+import SwiftUI
+
+class KeyboardViewController: UIInputViewController {
+    
+    private var audioRecorder = AudioRecorder()
+    private var transcriptionService: TranscriptionService?
+    private var deepgramService: DeepgramService?
+    private var localSpeechService: LocalSpeechService?
+    private var jarvisCore: JarvisCore?
+    
+    // State
+    private var isRecording = false
+    private var useDeepgram = false
+    private var useLocal = false
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        print("[Keyboard] VERSION: 2.0 (Pulse UI + Late Transcript Fix)")
+        
+        setupServices()
+        setupUI()
+    }
+    
+    private func setupServices() {
+        // 1. Setup OpenAI (Required for Formatting)
+        if let openAIKey = SecureAPIService.shared.getOpenAIKey() {
+            transcriptionService = TranscriptionService(apiKey: openAIKey)
+            jarvisCore = JarvisCore(apiKey: openAIKey)
+        }
+        
+        // 2. Setup Deepgram (Preferred for Transcription)
+        if let deepgramKey = SecureAPIService.shared.getDeepgramKey() {
+            print("[Keyboard] Deepgram Key found: \(deepgramKey.prefix(5))...")
+            deepgramService = DeepgramService(apiKey: deepgramKey)
+            deepgramService?.onTranscript = { [weak self] text in
+                self?.handleLiveTranscript(text)
+            }
+            deepgramService?.onError = { error in
+                print("Deepgram error: \(error)")
+            }
+            useDeepgram = true
+        } else {
+            print("[Keyboard] No Deepgram Key found in App Group!")
+        }
+        
+        // 3. Setup Local Speech (Fallback or Option)
+        localSpeechService = LocalSpeechService()
+        localSpeechService?.onTranscript = { [weak self] text in
+            self?.handleLiveTranscript(text)
+        }
+        
+        // Logic to decide which to use:
+        // If Deepgram Key exists -> Use Deepgram
+        // Else -> Use Local (Free, Fast)
+        // OpenAI Whisper is fallback if Local fails or user prefers it (not implemented here)
+        
+        if !useDeepgram {
+            useLocal = true
+            localSpeechService?.requestAuthorization()
+        }
+    }
+    
+    private func setupUI() {
+        let keyboardView = KeyboardView(
+            audioRecorder: audioRecorder,
+            onRecordStart: startRecording,
+            onRecordStop: stopRecording,
+            onCancel: { [weak self] in
+                self?.cancelRecording()
+            },
+            onReturn: { [weak self] in
+                self?.textDocumentProxy.insertText("\n")
+            },
+            onNextKeyboard: { [weak self] in
+                self?.advanceToNextInputMode()
+            }
+        )
+        
+        let hostingController = UIHostingController(rootView: keyboardView)
+        addChild(hostingController)
+        view.addSubview(hostingController.view)
+        
+        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            hostingController.view.leftAnchor.constraint(equalTo: view.leftAnchor),
+            hostingController.view.rightAnchor.constraint(equalTo: view.rightAnchor),
+            hostingController.view.topAnchor.constraint(equalTo: view.topAnchor),
+            hostingController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+        
+        hostingController.didMove(toParent: self)
+    }
+    
+    private func startRecording() {
+        print("[Keyboard] Start Recording Requested")
+        isRecording = true
+        isCancelled = false  // Reset cancel flag
+        
+        if useDeepgram {
+            print("[Keyboard] Starting Deepgram Stream...")
+            deepgramService?.startStreaming()
+            // Hook up audio recorder to deepgram
+            audioRecorder.onAudioData = { [weak self] data in
+                self?.deepgramService?.sendAudioData(data)
+            }
+            print("[Keyboard] Starting Audio Recorder...")
+            audioRecorder.startRecording()
+            
+        } else if useLocal {
+            // ...
+            do {
+                try localSpeechService?.startRecording()
+            } catch {
+                textDocumentProxy.insertText("[Error: Local Speech failed]")
+            }
+        } else {
+            // Fallback to OpenAI File-based
+            audioRecorder.startRecording()
+        }
+    }
+    
+    // State
+    private var accumulatedTranscript = ""
+    private var isCancelled = false
+    // private var isProcessing = false // Moved to AudioRecorder
+    
+    private func handleLiveTranscript(_ text: String) {
+        // Ignore if cancelled
+        if isCancelled {
+            print("[Keyboard] Ignoring transcript - recording was cancelled")
+            return
+        }
+        
+        accumulatedTranscript += text + " "
+        print("[Keyboard] Accumulated: \(accumulatedTranscript)")
+        
+        if !isRecording {
+             print("[Keyboard] Late transcript received. Processing now...")
+             formatAndInsert(accumulatedTranscript)
+             accumulatedTranscript = ""
+        }
+    }
+    
+    private func stopRecording() {
+        print("[Keyboard] Stop Recording Requested")
+        isRecording = false
+        
+        // Stop Audio & Streaming
+        audioRecorder.onAudioData = nil // Stop receiving audio data immediately
+        
+        if useDeepgram {
+            print("[Keyboard] Stopping Audio Recorder...")
+            audioRecorder.stopRecording { _ in }
+            print("[Keyboard] Stopping Deepgram Stream...")
+            deepgramService?.stopStreaming()
+        } else if useLocal {
+            localSpeechService?.stopRecording()
+        } else {
+            // OpenAI File-based (already handles paste in callback)
+            audioRecorder.stopRecording { [weak self] data in
+                guard let data = data, !data.isEmpty else { return }
+                self?.transcribeWithOpenAI(data)
+            }
+            return
+        }
+        
+        // Process Accumulated Text (Deepgram/Local)
+        if !accumulatedTranscript.isEmpty {
+            formatAndInsert(accumulatedTranscript)
+            accumulatedTranscript = ""
+        }
+    }
+    
+    private func cancelRecording() {
+        print("[Keyboard] Cancel Recording Requested")
+        isRecording = false
+        isCancelled = true  // Set cancel flag to ignore late transcripts
+        
+        // Stop Audio & Streaming without processing
+        audioRecorder.onAudioData = nil
+        
+        if useDeepgram {
+            audioRecorder.stopRecording { _ in }
+            deepgramService?.stopStreaming()
+        } else if useLocal {
+            localSpeechService?.stopRecording()
+        } else {
+            audioRecorder.stopRecording { _ in }
+        }
+        
+        // Discard accumulated transcript
+        accumulatedTranscript = ""
+        print("[Keyboard] Recording cancelled - transcript discarded")
+    }
+    
+    private func transcribeWithOpenAI(_ data: Data) {
+        transcriptionService?.transcribe(audioData: data) { [weak self] result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let text):
+                    self?.formatAndInsert(text)
+                case .failure(let error):
+                    self?.textDocumentProxy.insertText("[Error: \(error.localizedDescription)]")
+                }
+            }
+        }
+    }
+    
+    private func formatAndInsert(_ text: String) {
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty else { return }
+        
+        guard let core = jarvisCore else {
+            // No API key configured, insert raw text
+            print("[Keyboard] No JarvisCore, inserting raw: \(trimmedText.prefix(30))...")
+            textDocumentProxy.insertText(trimmedText)
+            return
+        }
+        
+        // Check if this is a Jarvis command
+        let isCommand = isJarvisCommand(trimmedText)
+        
+        audioRecorder.isProcessing = true
+        print("[Keyboard] Processing \(isCommand ? "COMMAND" : "DICTATION") with Gemini...")
+        
+        core.processText(trimmedText) { [weak self] result in
+            DispatchQueue.main.async {
+                self?.audioRecorder.isProcessing = false
+                
+                switch result {
+                case .success(let formatted):
+                    print("[Keyboard] Inserting Formatted: \(formatted.prefix(30))...")
+                    self?.textDocumentProxy.insertText(formatted)
+                case .failure(let error):
+                    print("[Keyboard] AI Failed: \(error). Inserting Raw Text.")
+                    self?.textDocumentProxy.insertText(trimmedText)
+                }
+            }
+        }
+    }
+    
+    private func isJarvisCommand(_ text: String) -> Bool {
+        let pattern = "^(hey|hi|hello|okay)?\\s*jarvis"
+        return text.lowercased().range(of: pattern, options: .regularExpression) != nil
+    }
+}
