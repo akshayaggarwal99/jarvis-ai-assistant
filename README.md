@@ -74,11 +74,14 @@ This is what open source is supposed to be.
 ## Quick setup (30 seconds)
 
 1. Download & open the app
-2. (Optional) paste free Deepgram + Gemini keys → unlimited speed  
-   OR skip everything → switch to **Local Whisper** in Settings → 100% offline
-3. Hold Fn and talk
+2. **Choose your transcription method:**
+   - **Recommended for first-time users:** Enable **Local Whisper** (100% offline, no API keys needed)
+   - **For faster transcription:** Add Deepgram API key ($200 free credits) or OpenAI API key
+   - **For AI features:** Add Gemini API key (1M tokens/day free)
+3. Grant microphone and accessibility permissions when prompted
+4. Hold Fn and talk
 
-That's literally it.
+That's literally it. Local Whisper downloads automatically (75MB) when you enable it.
 
 ---
 
@@ -101,6 +104,33 @@ npm install && npm run build && npm run dev
 ```
 
 Requires Node.js 18+, macOS 10.13+, Xcode CLI tools.
+
+---
+
+## Troubleshooting
+
+### App icon looks corrupted in Applications folder
+This is a macOS icon cache issue that sometimes happens. To fix:
+```bash
+# Clear icon cache
+sudo rm -rf /Library/Caches/com.apple.iconservices.store
+killall Dock
+killall Finder
+```
+Then restart your Mac. The icon should display correctly.
+
+### Transcription not working after setup
+1. **Check permissions**: Go to System Settings → Privacy & Security
+   - Microphone: Ensure Jarvis has permission
+   - Accessibility: Ensure Jarvis is enabled
+2. **Local Whisper**: If using local transcription, the model downloads automatically on first use (75MB). Be patient during the first transcription.
+3. **Cloud APIs**: If using Deepgram/OpenAI, verify your API keys are correct in Settings → Transcription.
+
+### "Model not found" error with Local Whisper
+The app should download the model automatically. If it fails:
+1. Open Settings → Transcription
+2. Click "Download" next to the Tiny English model
+3. Wait for the download to complete (75MB)
 
 ---
 
