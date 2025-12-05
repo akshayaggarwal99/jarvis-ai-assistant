@@ -17,6 +17,9 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
   const [saved, setSaved] = useState(false);
   const [hasExistingKeys, setHasExistingKeys] = useState(false);
   const [useLocalModel, setUseLocalModel] = useState(false);
+  const [downloadingModel, setDownloadingModel] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [modelDownloaded, setModelDownloaded] = useState(false);
 
   // Load existing keys and settings on mount
   useEffect(() => {
@@ -50,6 +53,12 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
             setUseLocalModel(true);
           }
         }
+        
+        // Check if default model is already downloaded
+        if (electronAPI?.whisperIsModelDownloaded) {
+          const isDownloaded = await electronAPI.whisperIsModelDownloaded('tiny.en');
+          setModelDownloaded(isDownloaded);
+        }
       } catch (error) {
         console.error('Failed to load API keys:', error);
       }
@@ -57,11 +66,12 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
     loadKeysAndSettings();
   }, []);
 
-  // Notify parent when keys change
+  // Notify parent when keys or local model changes
   useEffect(() => {
     const hasKeys = openaiKey.trim().length > 0 || deepgramKey.trim().length > 0 || geminiKey.trim().length > 0;
-    onApiKeysChange?.(hasKeys);
-  }, [openaiKey, deepgramKey, geminiKey, onApiKeysChange]);
+    // Allow continuing if either local model is enabled OR at least one API key is present
+    onApiKeysChange?.(useLocalModel || hasKeys);
+  }, [openaiKey, deepgramKey, geminiKey, useLocalModel, onApiKeysChange]);
 
   const handleSave = async () => {
     if (!openaiKey.trim() && !deepgramKey.trim() && !geminiKey.trim()) return;
@@ -95,18 +105,77 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
     }
   };
 
+  const getStatusMessage = (): string => {
+    if (useLocalModel && hasExistingKeys) {
+      return 'Local Whisper enabled + API keys configured';
+    }
+    if (useLocalModel) {
+      return modelDownloaded 
+        ? 'Ready! Local Whisper is set up' 
+        : 'Local Whisper enabled - model will download on first use';
+    }
+    return 'API keys configured';
+  };
+
   const hasAtLeastOneKey = openaiKey.trim().length > 0 || deepgramKey.trim().length > 0 || geminiKey.trim().length > 0;
 
-  const handleUseLocalModel = async () => {
+  const handleToggleLocalModel = async () => {
     try {
       const electronAPI = (window as any).electronAPI;
       if (electronAPI?.appUpdateSettings) {
-        await electronAPI.appUpdateSettings({ useLocalWhisper: true });
-        setUseLocalModel(true);
-        onApiKeysChange?.(true); // Allow continuing
+        const newValue = !useLocalModel;
+        await electronAPI.appUpdateSettings({ useLocalWhisper: newValue });
+        setUseLocalModel(newValue);
+        
+        // If enabling local model and model not downloaded, start download
+        if (newValue && !modelDownloaded && !downloadingModel) {
+          await handleDownloadModel();
+        }
+        
+        // Allow continuing if either local model is enabled OR at least one API key is present
+        onApiKeysChange?.(newValue || hasAtLeastOneKey);
       }
     } catch (error) {
-      console.error('Failed to enable local model:', error);
+      console.error('Failed to toggle local model:', error);
+    }
+  };
+
+  const handleDownloadModel = async () => {
+    try {
+      const electronAPI = (window as any).electronAPI;
+      if (!electronAPI?.whisperDownloadModel) {
+        console.error('whisperDownloadModel not available');
+        return;
+      }
+
+      setDownloadingModel(true);
+      setDownloadProgress(0);
+
+      // Set up progress listener
+      if (electronAPI?.onWhisperDownloadProgress) {
+        electronAPI.onWhisperDownloadProgress((data: { modelId: string; percent: number; downloadedMB: number; totalMB: number }) => {
+          setDownloadProgress(data.percent);
+        });
+      }
+
+      // Download the model (tiny.en - fastest, English only)
+      const result = await electronAPI.whisperDownloadModel('tiny.en');
+
+      // Clean up listener
+      if (electronAPI?.removeWhisperDownloadProgressListener) {
+        electronAPI.removeWhisperDownloadProgressListener();
+      }
+
+      if (result?.success) {
+        setModelDownloaded(true);
+      } else {
+        console.error('Model download failed');
+      }
+    } catch (error) {
+      console.error('Failed to download model:', error);
+    } finally {
+      setDownloadingModel(false);
+      setDownloadProgress(0);
     }
   };
 
@@ -121,43 +190,79 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
         </div>
         <h1 className={`text-2xl font-semibold ${theme.text.primary} mb-3`}>Set Up Transcription</h1>
         <p className={`text-sm ${theme.text.secondary} max-w-md mx-auto font-normal leading-relaxed`}>
-          Choose how Jarvis transcribes your voice. You can use cloud APIs for speed or run everything locally for privacy.
+          Choose how Jarvis transcribes your voice. <strong className={theme.text.primary}>We recommend starting with Local Whisper</strong> - it's 100% private, works offline, and requires no API keys.
         </p>
       </div>
 
-      {/* Local Model Option */}
-      <div className={`${theme.glass.primary} ${theme.radius.xl} p-5 ${theme.shadow} mb-4 border ${useLocalModel ? 'border-green-500/30' : 'border-white/10'}`}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-10 h-10 bg-gradient-to-br from-purple-500/20 to-blue-500/20 rounded-xl flex items-center justify-center border border-purple-500/20">
+      {/* Local Model Option - Recommended */}
+      <div className={`${theme.glass.primary} ${theme.radius.xl} p-5 ${theme.shadow} mb-4 border ${useLocalModel ? 'border-green-500/30 bg-green-500/5' : 'border-purple-500/30 bg-purple-500/5'}`}>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-4 flex-1">
+            <div className="w-10 h-10 bg-gradient-to-br from-purple-500/20 to-blue-500/20 rounded-xl flex items-center justify-center border border-purple-500/20 flex-shrink-0">
               <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
               </svg>
             </div>
-            <div>
-              <h3 className={`text-sm font-medium ${theme.text.primary} mb-0.5`}>Use Local Whisper Model</h3>
-              <p className={`text-xs ${theme.text.tertiary}`}>
-                100% offline, no API keys needed. Runs on your Mac.
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <h3 className={`text-sm font-semibold ${theme.text.primary}`}>Local Whisper Model</h3>
+                <span className="px-2 py-0.5 text-xs font-medium bg-purple-500/15 text-purple-300 rounded-md border border-purple-500/25">
+                  Recommended
+                </span>
+              </div>
+              <p className={`text-xs ${theme.text.tertiary} mb-2 leading-relaxed`}>
+                <strong className={theme.text.primary}>Perfect for getting started!</strong> Works 100% offline with no API keys required. Your voice never leaves your Mac. Download a small model (75MB) and you're ready to go.
               </p>
+              <p className={`text-xs ${theme.text.quaternary} italic`}>
+                You can always add cloud APIs later for faster transcription.
+              </p>
+              
+              {/* Download progress */}
+              {downloadingModel && (
+                <div className="mt-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={`text-xs ${theme.text.primary}`}>Downloading model...</span>
+                    <span className={`text-xs ${theme.text.tertiary}`}>{downloadProgress}%</span>
+                  </div>
+                  <div className="w-full bg-white/10 rounded-full h-1.5">
+                    <div 
+                      className="bg-purple-500 h-1.5 rounded-full transition-all duration-300"
+                      style={{ width: `${downloadProgress}%` }}
+                    ></div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Model status */}
+              {useLocalModel && modelDownloaded && !downloadingModel && (
+                <div className="mt-2 flex items-center gap-1.5">
+                  <svg className="w-3.5 h-3.5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span className={`text-xs text-green-400`}>Model ready (Tiny English - 75MB)</span>
+                </div>
+              )}
             </div>
           </div>
           <button
-            onClick={handleUseLocalModel}
-            disabled={useLocalModel}
-            className={`px-4 py-2 rounded-lg font-medium transition-all text-xs ${
-              useLocalModel
-                ? 'bg-green-500/20 border border-green-500/30 text-green-300 cursor-default'
-                : 'bg-white/10 border border-white/20 text-white hover:bg-white/20'
+            onClick={handleToggleLocalModel}
+            disabled={downloadingModel}
+            className={`px-4 py-2 rounded-lg font-medium transition-all text-xs whitespace-nowrap flex-shrink-0 ${
+              downloadingModel 
+                ? 'bg-white/10 border border-white/20 text-white/50 cursor-wait'
+                : useLocalModel
+                ? 'bg-green-500/20 border border-green-500/30 text-green-300 hover:bg-green-500/25'
+                : 'bg-purple-500/20 border border-purple-500/30 text-purple-300 hover:bg-purple-500/25'
             }`}
           >
-            {useLocalModel ? (
+            {downloadingModel ? 'Downloading...' : useLocalModel ? (
               <span className="flex items-center gap-1.5">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
                 Enabled
               </span>
-            ) : 'Use Local'}
+            ) : 'Enable'}
           </button>
         </div>
       </div>
@@ -165,12 +270,19 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
       {/* Divider */}
       <div className="flex items-center gap-4 mb-4">
         <div className="flex-1 h-px bg-white/10"></div>
-        <span className={`text-xs ${theme.text.tertiary}`}>or use cloud APIs for faster transcription</span>
+        <span className={`text-xs ${theme.text.tertiary}`}>or use cloud APIs (optional, for faster transcription)</span>
         <div className="flex-1 h-px bg-white/10"></div>
       </div>
 
       {/* API Key inputs */}
-      <div className={`${theme.glass.primary} ${theme.radius.xl} p-6 ${theme.shadow} mb-6`}>
+      <div className={`${theme.glass.primary} ${theme.radius.xl} p-6 ${theme.shadow} mb-6 ${useLocalModel ? 'opacity-60' : ''}`}>
+        {useLocalModel && (
+          <div className="mb-4 p-3 bg-purple-500/10 border border-purple-500/20 rounded-lg">
+            <p className={`text-xs ${theme.text.primary} text-center`}>
+              <strong>Local Whisper is enabled</strong> - these API keys are optional. You can skip this section and continue.
+            </p>
+          </div>
+        )}
         <div className="space-y-5">
           {/* OpenAI Key */}
           <div>
@@ -202,7 +314,7 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
               </button>
             </div>
             <p className={`text-xs ${theme.text.tertiary} mt-1.5`}>
-              For AI features and Whisper transcription
+              Optional - For OpenAI Whisper API or AI text processing features
             </p>
           </div>
 
@@ -241,7 +353,7 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
               </button>
             </div>
             <p className={`text-xs ${theme.text.tertiary} mt-1.5`}>
-              Faster real-time transcription with Deepgram Nova-3
+              Optional - Fast real-time transcription ($200 free credits available)
             </p>
           </div>
 
@@ -275,7 +387,7 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
               </button>
             </div>
             <p className={`text-xs ${theme.text.tertiary} mt-1.5`}>
-              For Gemini 2.5 Flash AI features
+              Optional - For Gemini 2.5 Flash AI features (1M tokens/day free)
             </p>
           </div>
 
@@ -307,7 +419,7 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
       </div>
 
       {/* Info box */}
-      <div className={`${theme.glass.primary} ${theme.radius.lg} p-4 border border-white/10`}>
+      <div className={`${theme.glass.primary} ${theme.radius.lg} p-4 border border-blue-500/20 bg-blue-500/5`}>
         <div className="flex items-start gap-3">
           <div className="w-8 h-8 bg-blue-500/10 rounded-lg flex items-center justify-center flex-shrink-0 border border-blue-500/20">
             <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -315,11 +427,18 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
             </svg>
           </div>
           <div>
-            <h4 className={`text-sm font-medium ${theme.text.primary} mb-1`}>Local vs Cloud</h4>
-            <p className={`text-xs ${theme.text.tertiary} leading-relaxed`}>
-              <strong>Local Whisper:</strong> 100% private, works offline. Best for privacy-focused users.<br/>
-              <strong>Cloud APIs:</strong> Faster transcription with Deepgram or OpenAI. Your keys are stored locally and never shared.
-            </p>
+            <h4 className={`text-sm font-medium ${theme.text.primary} mb-1`}>Which option should I choose?</h4>
+            <div className={`text-xs ${theme.text.tertiary} leading-relaxed space-y-1.5`}>
+              <p>
+                <strong className={theme.text.primary}>New users:</strong> Start with <strong>Local Whisper</strong>. It's completely free, private, and works great. You can always add cloud APIs later in Settings.
+              </p>
+              <p>
+                <strong className={theme.text.primary}>Cloud APIs:</strong> Optional speed boost. <strong>Deepgram</strong> offers $200 free credits (recommended), or use <strong>OpenAI Whisper</strong>. Add <strong>Gemini</strong> for AI features (1M tokens/day free).
+              </p>
+              <p className="text-xs opacity-80">
+                💡 All API keys are stored locally on your Mac and never shared.
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -332,7 +451,7 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
             <span className={`text-sm ${theme.text.primary}`}>
-              {useLocalModel ? 'Local Whisper enabled' : 'API keys configured'}
+              {getStatusMessage()}
             </span>
           </div>
         </div>
