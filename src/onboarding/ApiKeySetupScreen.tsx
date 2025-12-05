@@ -17,6 +17,9 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
   const [saved, setSaved] = useState(false);
   const [hasExistingKeys, setHasExistingKeys] = useState(false);
   const [useLocalModel, setUseLocalModel] = useState(false);
+  const [downloadingModel, setDownloadingModel] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [modelDownloaded, setModelDownloaded] = useState(false);
 
   // Load existing keys and settings on mount
   useEffect(() => {
@@ -49,6 +52,12 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
           if (settings?.useLocalWhisper) {
             setUseLocalModel(true);
           }
+        }
+        
+        // Check if default model is already downloaded
+        if (electronAPI?.whisperIsModelDownloaded) {
+          const isDownloaded = await electronAPI.whisperIsModelDownloaded('tiny.en');
+          setModelDownloaded(isDownloaded);
         }
       } catch (error) {
         console.error('Failed to load API keys:', error);
@@ -105,11 +114,56 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
         const newValue = !useLocalModel;
         await electronAPI.appUpdateSettings({ useLocalWhisper: newValue });
         setUseLocalModel(newValue);
+        
+        // If enabling local model and model not downloaded, start download
+        if (newValue && !modelDownloaded && !downloadingModel) {
+          await handleDownloadModel();
+        }
+        
         // Allow continuing if either local model is enabled OR at least one API key is present
         onApiKeysChange?.(newValue || hasAtLeastOneKey);
       }
     } catch (error) {
       console.error('Failed to toggle local model:', error);
+    }
+  };
+
+  const handleDownloadModel = async () => {
+    try {
+      const electronAPI = (window as any).electronAPI;
+      if (!electronAPI?.whisperDownloadModel) {
+        console.error('whisperDownloadModel not available');
+        return;
+      }
+
+      setDownloadingModel(true);
+      setDownloadProgress(0);
+
+      // Set up progress listener
+      if (electronAPI?.onWhisperDownloadProgress) {
+        electronAPI.onWhisperDownloadProgress((data: { percent: number }) => {
+          setDownloadProgress(data.percent);
+        });
+      }
+
+      // Download the model (tiny.en - fastest, English only)
+      const result = await electronAPI.whisperDownloadModel('tiny.en');
+
+      // Clean up listener
+      if (electronAPI?.removeWhisperDownloadProgressListener) {
+        electronAPI.removeWhisperDownloadProgressListener();
+      }
+
+      if (result?.success) {
+        setModelDownloaded(true);
+      } else {
+        console.error('Model download failed');
+      }
+    } catch (error) {
+      console.error('Failed to download model:', error);
+    } finally {
+      setDownloadingModel(false);
+      setDownloadProgress(0);
     }
   };
 
@@ -145,22 +199,51 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
                 </span>
               </div>
               <p className={`text-xs ${theme.text.tertiary} mb-2 leading-relaxed`}>
-                <strong className={theme.text.primary}>Perfect for getting started!</strong> Works 100% offline with no API keys required. Your voice never leaves your Mac. Download a small model (75-466MB) and you're ready to go.
+                <strong className={theme.text.primary}>Perfect for getting started!</strong> Works 100% offline with no API keys required. Your voice never leaves your Mac. Download a small model (75MB) and you're ready to go.
               </p>
               <p className={`text-xs ${theme.text.quaternary} italic`}>
                 You can always add cloud APIs later for faster transcription.
               </p>
+              
+              {/* Download progress */}
+              {downloadingModel && (
+                <div className="mt-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={`text-xs ${theme.text.primary}`}>Downloading model...</span>
+                    <span className={`text-xs ${theme.text.tertiary}`}>{downloadProgress}%</span>
+                  </div>
+                  <div className="w-full bg-white/10 rounded-full h-1.5">
+                    <div 
+                      className="bg-purple-500 h-1.5 rounded-full transition-all duration-300"
+                      style={{ width: `${downloadProgress}%` }}
+                    ></div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Model status */}
+              {useLocalModel && modelDownloaded && !downloadingModel && (
+                <div className="mt-2 flex items-center gap-1.5">
+                  <svg className="w-3.5 h-3.5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span className={`text-xs text-green-400`}>Model ready (Tiny English - 75MB)</span>
+                </div>
+              )}
             </div>
           </div>
           <button
             onClick={handleToggleLocalModel}
+            disabled={downloadingModel}
             className={`px-4 py-2 rounded-lg font-medium transition-all text-xs whitespace-nowrap flex-shrink-0 ${
-              useLocalModel
+              downloadingModel 
+                ? 'bg-white/10 border border-white/20 text-white/50 cursor-wait'
+                : useLocalModel
                 ? 'bg-green-500/20 border border-green-500/30 text-green-300 hover:bg-green-500/25'
                 : 'bg-purple-500/20 border border-purple-500/30 text-purple-300 hover:bg-purple-500/25'
             }`}
           >
-            {useLocalModel ? (
+            {downloadingModel ? 'Downloading...' : useLocalModel ? (
               <span className="flex items-center gap-1.5">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -357,7 +440,7 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
             </svg>
             <span className={`text-sm ${theme.text.primary}`}>
               {useLocalModel && hasExistingKeys ? 'Local Whisper enabled + API keys configured' : 
-               useLocalModel ? 'Ready! Local Whisper enabled - no API keys needed' : 
+               useLocalModel ? (modelDownloaded ? 'Ready! Local Whisper is set up' : 'Local Whisper enabled - model will download on first use') : 
                'API keys configured'}
             </span>
           </div>
