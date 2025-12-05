@@ -105,6 +105,18 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
     }
   };
 
+  const getStatusMessage = (): string => {
+    if (useLocalModel && hasExistingKeys) {
+      return 'Local Whisper enabled + API keys configured';
+    }
+    if (useLocalModel) {
+      return modelDownloaded 
+        ? 'Ready! Local Whisper is set up' 
+        : 'Local Whisper enabled - model will download on first use';
+    }
+    return 'API keys configured';
+  };
+
   const hasAtLeastOneKey = openaiKey.trim().length > 0 || deepgramKey.trim().length > 0 || geminiKey.trim().length > 0;
 
   const handleToggleLocalModel = async () => {
@@ -141,7 +153,7 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
 
       // Set up progress listener
       if (electronAPI?.onWhisperDownloadProgress) {
-        electronAPI.onWhisperDownloadProgress((data: { percent: number }) => {
+        electronAPI.onWhisperDownloadProgress((data: { modelId: string; percent: number; downloadedMB: number; totalMB: number }) => {
           setDownloadProgress(data.percent);
         });
       }
@@ -439,9 +451,7 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
             <span className={`text-sm ${theme.text.primary}`}>
-              {useLocalModel && hasExistingKeys ? 'Local Whisper enabled + API keys configured' : 
-               useLocalModel ? (modelDownloaded ? 'Ready! Local Whisper is set up' : 'Local Whisper enabled - model will download on first use') : 
-               'API keys configured'}
+              {getStatusMessage()}
             </span>
           </div>
         </div>
