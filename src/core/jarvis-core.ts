@@ -19,9 +19,15 @@ export class JarvisCore {
   private transcriptBuffer: string[] = [];
   private isProcessing = false;
 
-  constructor(openaiKey: string, geminiKey: string, anthropicKey?: string) {
+  constructor(
+    openaiKey: string, 
+    geminiKey: string, 
+    anthropicKey?: string,
+    ollamaUrl?: string,
+    ollamaModel?: string
+  ) {
     this.mcpClient = new MCPClient();
-    this.llmService = new CloudLLMService(openaiKey, geminiKey, anthropicKey);
+    this.llmService = new CloudLLMService(openaiKey, geminiKey, anthropicKey, ollamaUrl, ollamaModel);
   }
 
   async initialize(): Promise<void> {

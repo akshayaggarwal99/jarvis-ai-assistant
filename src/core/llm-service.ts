@@ -13,11 +13,21 @@ export class CloudLLMService {
   private openaiKey: string;
   private geminiKey: string;
   private anthropicKey: string;
+  private ollamaUrl: string;
+  private ollamaModel: string;
 
-  constructor(openaiKey: string, geminiKey: string, anthropicKey?: string) {
+  constructor(
+    openaiKey: string, 
+    geminiKey: string, 
+    anthropicKey?: string,
+    ollamaUrl?: string,
+    ollamaModel?: string
+  ) {
     this.openaiKey = openaiKey;
     this.geminiKey = geminiKey;
     this.anthropicKey = anthropicKey || '';
+    this.ollamaUrl = ollamaUrl || 'http://localhost:11434';
+    this.ollamaModel = ollamaModel || 'llama2';
   }
 
   async streamResponse(
@@ -36,7 +46,19 @@ export class CloudLLMService {
     console.log('🎯 Manual help requested for:', transcript.substring(0, 50) + '...');
     console.log('📋 Context provided:', context.length, 'items');
     
+    // Try providers in order: Ollama (if configured) -> Gemini -> Claude -> OpenAI
     try {
+      // Try Ollama first if configured (local and private)
+      if (this.ollamaUrl && this.ollamaModel) {
+        try {
+          await this.streamOllama(prompt, callbacks);
+          return;
+        } catch (ollamaError) {
+          console.log('Ollama not available, falling back to cloud providers:', ollamaError);
+        }
+      }
+      
+      // Try Gemini
       await this.streamGemini(prompt, callbacks);
     } catch (error) {
       console.error('Gemini failed, falling back to Claude:', error);
@@ -233,6 +255,70 @@ SUGGESTION:`;
             } catch (e) {
               // Skip malformed JSON
             }
+          }
+        }
+      }
+      callbacks.onComplete(fullText);
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  private async streamOllama(prompt: string, callbacks: StreamingLLMResponse): Promise<void> {
+    const url = `${this.ollamaUrl}/api/generate`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: this.ollamaModel,
+        prompt: prompt,
+        stream: true,
+        options: {
+          temperature: 0.3,
+          num_predict: 50,
+        }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Ollama API error: ${response.status} - ${response.statusText}`);
+    }
+
+    if (!response.body) {
+      throw new Error('No response body from Ollama');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let fullText = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n').filter(line => line.trim());
+        
+        for (const line of lines) {
+          try {
+            const parsed = JSON.parse(line);
+            const token = parsed.response;
+            
+            if (token) {
+              fullText += token;
+              callbacks.onToken(token);
+            }
+            
+            // Check if generation is complete
+            if (parsed.done) {
+              break;
+            }
+          } catch (e) {
+            // Skip malformed JSON
           }
         }
       }

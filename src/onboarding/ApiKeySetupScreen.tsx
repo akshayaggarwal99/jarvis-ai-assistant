@@ -15,6 +15,9 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
   const [saved, setSaved] = useState(false);
   const [hasExistingKeys, setHasExistingKeys] = useState(false);
   const [useLocalWhisper, setUseLocalWhisper] = useState(false);
+  const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434');
+  const [ollamaModel, setOllamaModel] = useState('llama2');
+  const [showOllamaConfig, setShowOllamaConfig] = useState(false);
 
   // Load existing keys and settings on mount
   useEffect(() => {
@@ -43,6 +46,13 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
           if (settings?.useLocalWhisper) {
             setUseLocalWhisper(true);
           }
+          if (settings?.ollamaUrl) {
+            setOllamaUrl(settings.ollamaUrl);
+            setShowOllamaConfig(true);
+          }
+          if (settings?.ollamaModel) {
+            setOllamaModel(settings.ollamaModel);
+          }
         }
       } catch (error) {
         console.error('Failed to load API keys:', error);
@@ -54,10 +64,11 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
   // Notify parent when ready to continue
   useEffect(() => {
     // User can continue if they have Gemini key (required for AI) 
+    // OR if they use Ollama (local AI)
     // OR if they just want to try local-only mode
-    const canContinue = geminiKey.trim().length > 0 || useLocalWhisper;
+    const canContinue = geminiKey.trim().length > 0 || showOllamaConfig || useLocalWhisper;
     onApiKeysChange?.(canContinue);
-  }, [geminiKey, useLocalWhisper, onApiKeysChange]);
+  }, [geminiKey, showOllamaConfig, useLocalWhisper, onApiKeysChange]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -70,7 +81,11 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
         });
       }
       if (electronAPI?.appUpdateSettings) {
-        await electronAPI.appUpdateSettings({ useLocalWhisper });
+        await electronAPI.appUpdateSettings({ 
+          useLocalWhisper,
+          ollamaUrl: showOllamaConfig ? ollamaUrl.trim() : undefined,
+          ollamaModel: showOllamaConfig ? ollamaModel.trim() : undefined,
+        });
       }
       setSaved(true);
       setHasExistingKeys(true);
@@ -223,51 +238,147 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
       <div className={`${theme.glass.primary} ${theme.radius.xl} p-5 ${theme.shadow} mb-4`}>
         <div className="flex items-center gap-2 mb-4">
           <div className="w-6 h-6 bg-white/10 rounded-full flex items-center justify-center text-xs font-bold text-white">2</div>
-          <h3 className={`text-sm font-semibold ${theme.text.primary}`}>Add Gemini API Key</h3>
+          <h3 className={`text-sm font-semibold ${theme.text.primary}`}>Add AI Provider</h3>
           <span className="px-2 py-0.5 text-xs font-medium bg-amber-500/10 text-amber-400 rounded-md border border-amber-500/20">
             Required
           </span>
         </div>
         
-        <p className={`text-xs ${theme.text.tertiary} mb-3`}>
-          Gemini formats your speech, fixes grammar, and powers AI commands. Free tier: 1M tokens/day!
-        </p>
-        
-        <div className="flex items-center justify-between mb-2">
-          <label className={`text-xs font-medium ${theme.text.secondary}`}>Gemini API Key</label>
+        {/* AI Provider Toggle */}
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          {/* Gemini Cloud Option */}
           <button
-            onClick={() => openExternalLink('https://aistudio.google.com/app/apikey')}
-            className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+            onClick={() => setShowOllamaConfig(false)}
+            className={`p-4 rounded-xl text-left transition-all ${
+              !showOllamaConfig 
+                ? 'bg-blue-500/10 border-2 border-blue-500/40' 
+                : 'bg-white/5 border-2 border-white/10 hover:border-white/20'
+            }`}
           >
-            Get free key →
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-blue-400">FREE</span>
+              {!showOllamaConfig && (
+                <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              )}
+            </div>
+            <h4 className={`text-sm font-medium ${theme.text.primary} mb-1`}>Gemini Cloud</h4>
+            <p className={`text-xs ${theme.text.tertiary}`}>1M free tokens/day</p>
+          </button>
+
+          {/* Ollama Local Option */}
+          <button
+            onClick={() => setShowOllamaConfig(true)}
+            className={`p-4 rounded-xl text-left transition-all ${
+              showOllamaConfig 
+                ? 'bg-purple-500/10 border-2 border-purple-500/40' 
+                : 'bg-white/5 border-2 border-white/10 hover:border-white/20'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-purple-400">100% LOCAL</span>
+              {showOllamaConfig && (
+                <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              )}
+            </div>
+            <h4 className={`text-sm font-medium ${theme.text.primary} mb-1`}>Ollama</h4>
+            <p className={`text-xs ${theme.text.tertiary}`}>Local AI, no API needed</p>
           </button>
         </div>
-        <div className="relative">
-          <input
-            type={showGeminiKey ? 'text' : 'password'}
-            value={geminiKey}
-            onChange={(e) => setGeminiKey(e.target.value)}
-            placeholder="AIza..."
-            className={`w-full bg-black/40 rounded-lg px-4 py-2.5 pr-16 text-white placeholder-white/40 border ${
-              geminiKey.trim() ? 'border-green-500/40' : 'border-amber-500/40'
-            } focus:border-white/50 focus:outline-none transition-colors font-mono text-xs`}
-          />
-          <button
-            type="button"
-            onClick={() => setShowGeminiKey(!showGeminiKey)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 hover:text-white text-xs"
-          >
-            {showGeminiKey ? 'Hide' : 'Show'}
-          </button>
-        </div>
-        
-        {!geminiKey.trim() && (
-          <p className={`text-xs text-amber-400 mt-2 flex items-center gap-1`}>
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-            Required for AI formatting and commands
-          </p>
+
+        {/* Gemini Configuration (only show if cloud selected) */}
+        {!showOllamaConfig && (
+          <>
+            <p className={`text-xs ${theme.text.tertiary} mb-3`}>
+              Gemini formats your speech, fixes grammar, and powers AI commands. Free tier: 1M tokens/day!
+            </p>
+            
+            <div className="flex items-center justify-between mb-2">
+              <label className={`text-xs font-medium ${theme.text.secondary}`}>Gemini API Key</label>
+              <button
+                onClick={() => openExternalLink('https://aistudio.google.com/app/apikey')}
+                className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+              >
+                Get free key →
+              </button>
+            </div>
+            <div className="relative">
+              <input
+                type={showGeminiKey ? 'text' : 'password'}
+                value={geminiKey}
+                onChange={(e) => setGeminiKey(e.target.value)}
+                placeholder="AIza..."
+                className={`w-full bg-black/40 rounded-lg px-4 py-2.5 pr-16 text-white placeholder-white/40 border ${
+                  geminiKey.trim() ? 'border-green-500/40' : 'border-amber-500/40'
+                } focus:border-white/50 focus:outline-none transition-colors font-mono text-xs`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowGeminiKey(!showGeminiKey)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 hover:text-white text-xs"
+              >
+                {showGeminiKey ? 'Hide' : 'Show'}
+              </button>
+            </div>
+            
+            {!geminiKey.trim() && (
+              <p className={`text-xs text-amber-400 mt-2 flex items-center gap-1`}>
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                Required for AI formatting and commands
+              </p>
+            )}
+          </>
+        )}
+
+        {/* Ollama Configuration (only show if Ollama selected) */}
+        {showOllamaConfig && (
+          <>
+            <p className={`text-xs ${theme.text.tertiary} mb-3`}>
+              Ollama runs AI models locally on your Mac. Install from{' '}
+              <button
+                onClick={() => openExternalLink('https://ollama.ai')}
+                className="text-purple-400 hover:text-purple-300 underline"
+              >
+                ollama.ai
+              </button>
+            </p>
+            
+            <div className="space-y-3">
+              <div>
+                <label className={`text-xs font-medium ${theme.text.secondary} block mb-2`}>Ollama Server URL</label>
+                <input
+                  type="text"
+                  value={ollamaUrl}
+                  onChange={(e) => setOllamaUrl(e.target.value)}
+                  placeholder="http://localhost:11434"
+                  className="w-full bg-black/40 rounded-lg px-4 py-2.5 text-white placeholder-white/40 border border-white/20 focus:border-purple-500/50 focus:outline-none transition-colors font-mono text-xs"
+                />
+              </div>
+              
+              <div>
+                <label className={`text-xs font-medium ${theme.text.secondary} block mb-2`}>Model Name</label>
+                <input
+                  type="text"
+                  value={ollamaModel}
+                  onChange={(e) => setOllamaModel(e.target.value)}
+                  placeholder="llama2, mistral, phi3, etc."
+                  className="w-full bg-black/40 rounded-lg px-4 py-2.5 text-white placeholder-white/40 border border-white/20 focus:border-purple-500/50 focus:outline-none transition-colors font-mono text-xs"
+                />
+              </div>
+            </div>
+            
+            <p className={`text-xs ${theme.text.tertiary} mt-3 flex items-start gap-2`}>
+              <svg className="w-3 h-3 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>Make sure Ollama is running: <code className="bg-white/10 px-1 rounded">ollama serve</code></span>
+            </p>
+          </>
         )}
       </div>
 
@@ -299,7 +410,12 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
         <p className={`text-xs ${theme.text.tertiary}`}>
           {useLocalWhisper ? '🖥️ Local Whisper' : '☁️ Deepgram Cloud'} 
           {' + '}
-          {geminiKey.trim() ? '✅ Gemini AI' : '⚠️ No AI key yet'}
+          {showOllamaConfig 
+            ? '🤖 Ollama (Local AI)' 
+            : geminiKey.trim() 
+              ? '✅ Gemini AI' 
+              : '⚠️ No AI key yet'
+          }
         </p>
       </div>
     </div>

@@ -24,6 +24,9 @@ interface AppSettings {
   awsAccessKeyId?: string;
   awsSecretAccessKey?: string;
   awsRegion?: string;
+  // Ollama configuration
+  ollamaUrl?: string;
+  ollamaModel?: string;
 }
 
 /**

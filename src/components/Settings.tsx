@@ -52,6 +52,8 @@ const Settings: React.FC = () => {
   const [awsAccessKeyId, setAwsAccessKeyId] = useState('');
   const [awsSecretAccessKey, setAwsSecretAccessKey] = useState('');
   const [awsRegion, setAwsRegion] = useState('us-east-1');
+  const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434');
+  const [ollamaModel, setOllamaModel] = useState('llama2');
   const [showGeminiKey, setShowGeminiKey] = useState(false);
   const [showAnthropicKey, setShowAnthropicKey] = useState(false);
   const [showAwsAccessKey, setShowAwsAccessKey] = useState(false);
@@ -163,6 +165,8 @@ const Settings: React.FC = () => {
             setAwsAccessKeyId(apiKeys.awsAccessKeyId || '');
             setAwsSecretAccessKey(apiKeys.awsSecretAccessKey || '');
             setAwsRegion(apiKeys.awsRegion || 'us-east-1');
+            setOllamaUrl(apiKeys.ollamaUrl || 'http://localhost:11434');
+            setOllamaModel(apiKeys.ollamaModel || 'llama2');
           }
         }
         
@@ -411,6 +415,14 @@ const Settings: React.FC = () => {
         });
         setAiKeysSaved(true);
         setTimeout(() => setAiKeysSaved(false), 3000);
+      }
+      
+      // Save Ollama settings separately via app settings
+      if (electronAPI && electronAPI.appUpdateSettings) {
+        await electronAPI.appUpdateSettings({
+          ollamaUrl: ollamaUrl.trim(),
+          ollamaModel: ollamaModel.trim(),
+        });
       }
     } catch (error) {
       console.error('Failed to save AI keys:', error);
@@ -919,6 +931,82 @@ const Settings: React.FC = () => {
               </div>
             </div>
             <p className={`text-xs ${theme.text.tertiary} mt-1`}>Select the region where Bedrock is enabled</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Ollama */}
+      <div className={`${theme.glass.primary} ${theme.radius.xl} p-6 ${theme.shadow}`}>
+        <h3 className={`font-medium ${theme.text.primary} mb-2 flex items-center gap-2`}>
+          <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+          </svg>
+          Ollama (Local AI)
+          <span className="px-2 py-0.5 text-xs font-medium bg-purple-500/10 text-purple-400 rounded-md border border-purple-500/20">
+            100% Local
+          </span>
+        </h3>
+        <p className={`text-sm ${theme.text.tertiary} mb-4`}>
+          Run AI models locally on your Mac with Ollama. No API keys needed, completely private.
+        </p>
+        
+        <div className="space-y-4">
+          {/* Ollama URL */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className={`text-sm font-medium ${theme.text.primary}`}>
+                Ollama Server URL
+              </label>
+              <button
+                onClick={() => openExternalLink('https://ollama.ai')}
+                className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+              >
+                Install Ollama →
+              </button>
+            </div>
+            <input
+              type="text"
+              value={ollamaUrl}
+              onChange={(e) => setOllamaUrl(e.target.value)}
+              placeholder="http://localhost:11434"
+              className="w-full bg-black/40 rounded-xl px-4 py-3 text-white placeholder-white/40 border border-white/20 focus:border-white/40 focus:outline-none transition-colors font-mono text-sm"
+            />
+            <p className={`text-xs ${theme.text.tertiary} mt-1`}>Default: http://localhost:11434</p>
+          </div>
+          
+          {/* Ollama Model */}
+          <div>
+            <label className={`block text-sm font-medium ${theme.text.primary} mb-2`}>
+              Model Name
+            </label>
+            <input
+              type="text"
+              value={ollamaModel}
+              onChange={(e) => setOllamaModel(e.target.value)}
+              placeholder="llama2, mistral, phi3, etc."
+              className="w-full bg-black/40 rounded-xl px-4 py-3 text-white placeholder-white/40 border border-white/20 focus:border-white/40 focus:outline-none transition-colors font-mono text-sm"
+            />
+            <p className={`text-xs ${theme.text.tertiary} mt-1`}>
+              Install models with: <code className="bg-white/10 px-1.5 py-0.5 rounded">ollama pull llama2</code>
+            </p>
+          </div>
+          
+          <div className={`bg-purple-500/10 border border-purple-500/20 rounded-lg p-3`}>
+            <p className={`text-xs ${theme.text.tertiary} flex items-start gap-2`}>
+              <svg className="w-4 h-4 mt-0.5 flex-shrink-0 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>
+                Make sure Ollama is running: <code className="bg-white/10 px-1.5 py-0.5 rounded">ollama serve</code>
+                <br />Available models: llama2, llama3, mistral, phi3, codellama, and more at{' '}
+                <button
+                  onClick={() => openExternalLink('https://ollama.ai/library')}
+                  className="text-purple-400 hover:text-purple-300 underline"
+                >
+                  ollama.ai/library
+                </button>
+              </span>
+            </p>
           </div>
         </div>
       </div>
