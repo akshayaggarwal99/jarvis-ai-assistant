@@ -1,4 +1,4 @@
-import { ipcMain, shell } from 'electron';
+import { ipcMain, shell, app } from 'electron';
 import { Logger } from '../core/logger';
 import { AuthService } from '../services/auth-service';
 import { WindowManager } from '../services/window-manager';
@@ -185,6 +185,10 @@ export class IPCHandlers {
         Logger.error('❌ [IPCHandlers] Failed to open external URL:', error);
         return false;
       }
+    });
+
+    safeRegisterHandler('get-app-version', () => {
+      return app.getVersion();
     });
   }
   

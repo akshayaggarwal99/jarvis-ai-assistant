@@ -8,6 +8,7 @@ interface ElectronAPI {
   pasteLastTranscription: () => void;
   startDictation: () => void;
   closeApp: () => void;
+  getAppVersion: () => Promise<string>;
   openExternal: (url: string) => Promise<boolean>;
   onOAuthCallback: (callback: (data: { code?: string; state?: string; token?: string }) => void) => void;
   completeOnboarding: () => Promise<boolean>;

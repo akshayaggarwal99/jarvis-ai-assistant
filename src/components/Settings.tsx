@@ -80,6 +80,9 @@ const Settings: React.FC = () => {
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [downloadedModels, setDownloadedModels] = useState<string[]>([]);
 
+  // App version
+  const [appVersion, setAppVersion] = useState('1.1.3');
+
   // Pre-defined hotkey options (single keys for push-to-talk)
   const presetHotkeys = [
     { key: 'fn', label: 'Function (fn)', description: 'Push-to-talk - behavior varies by keyboard/settings' },
@@ -140,7 +143,17 @@ const Settings: React.FC = () => {
     loadSettings();
   }, []);
 
-
+  useEffect(() => {
+    const fetchVersion = async () => {
+      try {
+        const version = await window.electronAPI.getAppVersion();
+        setAppVersion(version);
+      } catch (error) {
+        console.error('Failed to fetch app version:', error);
+      }
+    };
+    fetchVersion();
+  }, []);
 
   const loadSettings = async () => {
     try {
@@ -1181,7 +1194,7 @@ const Settings: React.FC = () => {
             </div>
             <div className="flex-1">
               <h4 className={`text-lg font-semibold ${theme.text.primary}`}>Jarvis AI Assistant</h4>
-              <p className={`text-sm ${theme.text.tertiary}`}>Version 1.1.2</p>
+              <p className={`text-sm ${theme.text.tertiary}`}>Version {appVersion}</p>
               <p className={`text-xs ${theme.text.tertiary} mt-1`}>
                 Your intelligent voice companion for macOS
               </p>
@@ -1239,7 +1252,7 @@ const Settings: React.FC = () => {
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs text-white/80 hover:bg-white/10 hover:text-white transition-all"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c-1.657 0-3-4.03-3-9s1.343-9 3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
               </svg>
               Website
             </button>
@@ -1344,7 +1357,7 @@ const Settings: React.FC = () => {
               >
                 {isSaving ? (
                   <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-transparent rounded-full animate-spin mr-2"></div>
+                                       <div className="w-4 h-4 border-2 border-white/30 border-t-transparent rounded-full animate-spin mr-2"></div>
                     Saving...
                   </>
                 ) : (

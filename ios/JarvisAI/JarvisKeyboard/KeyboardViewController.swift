@@ -44,8 +44,14 @@ class KeyboardViewController: UIInputViewController {
                 self?.handleFinalTranscript(fullText)
             }
             
-            deepgramService?.onError = { error in
-                print("Deepgram error: \(error)")
+            deepgramService?.onError = { [weak self] error in
+                let msg = error.localizedDescription
+                // Check for common connection errors
+                if msg.contains("Socket is not connected") {
+                    self?.handleError("Connection Failed. Check Internet or 'Allow Full Access'")
+                } else {
+                    self?.handleError(msg)
+                }
             }
             useDeepgram = true
         } else {
@@ -84,6 +90,11 @@ class KeyboardViewController: UIInputViewController {
                 self?.advanceToNextInputMode()
             }
         )
+        
+        // Wire up Audio Recorder errors too
+        audioRecorder.onError = { [weak self] errorMessage in
+            self?.handleError(errorMessage)
+        }
         
         let hostingController = UIHostingController(rootView: keyboardView)
         addChild(hostingController)
@@ -143,6 +154,19 @@ class KeyboardViewController: UIInputViewController {
         // Just for live feedback - we don't accumulate here anymore
         // The final ordered transcript comes from onFinalTranscript
         print("[Keyboard] Live transcript: \(text)")
+    }
+    
+    private func handleError(_ message: String) {
+        let errorMessage = "\n[Error: \(message)]"
+        print("[Keyboard] Error encountered: \(message)")
+        
+        DispatchQueue.main.async { [weak self] in
+            // Stop recording on error so user isn't stuck
+            self?.stopRecording()
+            
+            // Insert error into text field so user can see it
+            self?.textDocumentProxy.insertText(errorMessage)
+        }
     }
     
     // Called when Deepgram stream ends with the complete, ordered transcript

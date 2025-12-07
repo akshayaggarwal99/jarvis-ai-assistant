@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   startDictation: () => ipcRenderer.send('start-dictation'),
   closeApp: () => ipcRenderer.send('close-app'),
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
   onOAuthCallback: (callback: (data: { code: string; state: string }) => void) => {
     ipcRenderer.on('oauth-callback', (_event, data) => callback(data));
