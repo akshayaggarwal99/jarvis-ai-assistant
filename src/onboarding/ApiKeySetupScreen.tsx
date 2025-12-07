@@ -64,11 +64,12 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
   // Notify parent when ready to continue
   useEffect(() => {
     // User can continue if they have Gemini key (required for AI) 
-    // OR if they use Ollama (local AI)
+    // OR if they use Ollama (local AI) with valid configuration
     // OR if they just want to try local-only mode
-    const canContinue = geminiKey.trim().length > 0 || showOllamaConfig || useLocalWhisper;
+    const hasValidOllama = showOllamaConfig && ollamaUrl.trim() && ollamaModel.trim();
+    const canContinue = geminiKey.trim().length > 0 || hasValidOllama || useLocalWhisper;
     onApiKeysChange?.(canContinue);
-  }, [geminiKey, showOllamaConfig, useLocalWhisper, onApiKeysChange]);
+  }, [geminiKey, showOllamaConfig, ollamaUrl, ollamaModel, useLocalWhisper, onApiKeysChange]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -81,10 +82,14 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
         });
       }
       if (electronAPI?.appUpdateSettings) {
+        // Only save Ollama settings if they're being used and are valid
+        const ollamaUrlToSave = showOllamaConfig && ollamaUrl.trim() ? ollamaUrl.trim() : undefined;
+        const ollamaModelToSave = showOllamaConfig && ollamaModel.trim() ? ollamaModel.trim() : undefined;
+        
         await electronAPI.appUpdateSettings({ 
           useLocalWhisper,
-          ollamaUrl: showOllamaConfig ? ollamaUrl.trim() : undefined,
-          ollamaModel: showOllamaConfig ? ollamaModel.trim() : undefined,
+          ollamaUrl: ollamaUrlToSave,
+          ollamaModel: ollamaModelToSave,
         });
       }
       setSaved(true);

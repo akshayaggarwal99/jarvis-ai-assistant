@@ -417,11 +417,14 @@ const Settings: React.FC = () => {
         setTimeout(() => setAiKeysSaved(false), 3000);
       }
       
-      // Save Ollama settings separately via app settings
+      // Save Ollama settings separately via app settings, only if non-empty
       if (electronAPI && electronAPI.appUpdateSettings) {
+        const ollamaUrlToSave = ollamaUrl.trim() || undefined;
+        const ollamaModelToSave = ollamaModel.trim() || undefined;
+        
         await electronAPI.appUpdateSettings({
-          ollamaUrl: ollamaUrl.trim(),
-          ollamaModel: ollamaModel.trim(),
+          ollamaUrl: ollamaUrlToSave,
+          ollamaModel: ollamaModelToSave,
         });
       }
     } catch (error) {

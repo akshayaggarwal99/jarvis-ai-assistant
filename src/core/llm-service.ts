@@ -48,8 +48,8 @@ export class CloudLLMService {
     
     // Try providers in order: Ollama (if configured) -> Gemini -> Claude -> OpenAI
     try {
-      // Try Ollama first if configured (local and private)
-      if (this.ollamaUrl && this.ollamaModel) {
+      // Try Ollama first if configured with valid URL and model (local and private)
+      if (this.ollamaUrl && this.ollamaUrl.trim() && this.ollamaModel && this.ollamaModel.trim()) {
         try {
           await this.streamOllama(prompt, callbacks);
           return;
@@ -278,7 +278,7 @@ SUGGESTION:`;
         stream: true,
         options: {
           temperature: 0.3,
-          num_predict: 50,
+          num_predict: 512, // Reasonable default for AI assistance responses
         }
       })
     });
