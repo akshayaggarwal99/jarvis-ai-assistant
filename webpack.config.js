@@ -76,6 +76,8 @@ class CopyAssetsPlugin {
       }
 
       // Copy native modules
+      const entitlementsPath = path.join(__dirname, 'certificates', 'entitlements.mac.plist');
+      
       const fnKeySrc = path.join(__dirname, 'build', 'Release', 'fn_key_monitor.node');
       const fnKeyDest = path.join(__dirname, 'dist', 'fn_key_monitor.node');
       if (fs.existsSync(fnKeySrc)) {
@@ -83,8 +85,12 @@ class CopyAssetsPlugin {
         // Try to sign the native module to avoid SIGKILL
         try {
           const { execSync } = require('child_process');
-          execSync(`codesign --deep --force --sign - --entitlements certificates/entitlements.mac.plist "${fnKeyDest}"`, { cwd: __dirname });
-          console.log('✅ Signed fn_key_monitor.node');
+          if (fs.existsSync(entitlementsPath)) {
+            execSync(`codesign --deep --force --sign - --entitlements "${entitlementsPath}" "${fnKeyDest}"`, { cwd: __dirname });
+            console.log('✅ Signed fn_key_monitor.node');
+          } else {
+            console.log('⚠️ Entitlements file not found, skipping signing for fn_key_monitor.node');
+          }
         } catch (e) {
           console.log('⚠️ Failed to sign fn_key_monitor.node:', e.message);
         }
@@ -97,8 +103,12 @@ class CopyAssetsPlugin {
         // Try to sign the native module to avoid SIGKILL
         try {
           const { execSync } = require('child_process');
-          execSync(`codesign --deep --force --sign - --entitlements certificates/entitlements.mac.plist "${audioDest}"`, { cwd: __dirname });
-          console.log('✅ Signed audio_capture.node');
+          if (fs.existsSync(entitlementsPath)) {
+            execSync(`codesign --deep --force --sign - --entitlements "${entitlementsPath}" "${audioDest}"`, { cwd: __dirname });
+            console.log('✅ Signed audio_capture.node');
+          } else {
+            console.log('⚠️ Entitlements file not found, skipping signing for audio_capture.node');
+          }
         } catch (e) {
           console.log('⚠️ Failed to sign audio_capture.node:', e.message);
         }
@@ -111,8 +121,12 @@ class CopyAssetsPlugin {
         // Try to sign the native module to avoid SIGKILL
         try {
           const { execSync } = require('child_process');
-          execSync(`codesign --deep --force --sign - --entitlements certificates/entitlements.mac.plist "${typingMonitorDest}"`, { cwd: __dirname });
-          console.log('✅ Signed typing_monitor.node');
+          if (fs.existsSync(entitlementsPath)) {
+            execSync(`codesign --deep --force --sign - --entitlements "${entitlementsPath}" "${typingMonitorDest}"`, { cwd: __dirname });
+            console.log('✅ Signed typing_monitor.node');
+          } else {
+            console.log('⚠️ Entitlements file not found, skipping signing for typing_monitor.node');
+          }
         } catch (e) {
           console.log('⚠️ Failed to sign typing_monitor.node:', e.message);
         }
@@ -125,8 +139,12 @@ class CopyAssetsPlugin {
         // Try to sign the native module to avoid SIGKILL
         try {
           const { execSync } = require('child_process');
-          execSync(`codesign --deep --force --sign - --entitlements certificates/entitlements.mac.plist "${universalKeyDest}"`, { cwd: __dirname });
-          console.log('✅ Signed universal_key_monitor.node');
+          if (fs.existsSync(entitlementsPath)) {
+            execSync(`codesign --deep --force --sign - --entitlements "${entitlementsPath}" "${universalKeyDest}"`, { cwd: __dirname });
+            console.log('✅ Signed universal_key_monitor.node');
+          } else {
+            console.log('⚠️ Entitlements file not found, skipping signing for universal_key_monitor.node');
+          }
         } catch (e) {
           console.log('⚠️ Failed to sign universal_key_monitor.node:', e.message);
         }

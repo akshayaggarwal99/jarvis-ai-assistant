@@ -7,6 +7,7 @@ import { UpdateService } from '../services/update-service';
 
 export class UpdateIPCHandlers {
   private static instance: UpdateIPCHandlers;
+  private handlersRegistered = false;
   
   private updateService: UpdateService | null = null;
   
@@ -24,6 +25,11 @@ export class UpdateIPCHandlers {
   }
   
   registerHandlers(): void {
+    if (this.handlersRegistered) {
+      Logger.warning('Update IPC handlers already registered, skipping');
+      return;
+    }
+
     ipcMain.handle('check-for-updates', () => {
       Logger.info('🔍 Manual update check requested');
       if (this.updateService) {
@@ -48,6 +54,7 @@ export class UpdateIPCHandlers {
       app.exit(0);
     });
     
-    Logger.info('✅ UpdateIPCHandlers registered');
+    this.handlersRegistered = true;
+    Logger.info('Update IPC handlers registered');
   }
 }

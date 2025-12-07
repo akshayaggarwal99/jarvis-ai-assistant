@@ -8,6 +8,7 @@ import { PushToTalkService } from '../input/push-to-talk-refactored';
 
 export class DictationIPCHandlers {
   private static instance: DictationIPCHandlers;
+  private handlersRegistered = false;
   
   private pushToTalkService: PushToTalkService | null = null;
   private transcripts: any[] = [];
@@ -43,6 +44,11 @@ export class DictationIPCHandlers {
   }
   
   registerHandlers(): void {
+    if (this.handlersRegistered) {
+      Logger.warning('Dictation IPC handlers already registered, skipping');
+      return;
+    }
+
     // Legacy dictation handlers (redirect to push-to-talk)
     ipcMain.on('start-dictation', () => {
       Logger.info('Starting push-to-talk recording');
@@ -116,6 +122,7 @@ export class DictationIPCHandlers {
       return lastTranscription || '';
     });
     
+    this.handlersRegistered = true;
     Logger.info('✅ DictationIPCHandlers registered');
   }
 }
