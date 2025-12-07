@@ -97,8 +97,18 @@ export class AppInitializer {
         Logger.warning('ANTHROPIC_API_KEY not available - some features may be limited');
       }
       
+      // Get Ollama settings from app settings
+      const AppSettingsService = (await import('../services/app-settings-service')).AppSettingsService;
+      const appSettings = AppSettingsService.getInstance().getSettings();
+      const ollamaUrl = appSettings.ollamaUrl;
+      const ollamaModel = appSettings.ollamaModel;
+      
+      if (ollamaUrl && ollamaModel) {
+        Logger.info(`🤖 Ollama configuration found: ${ollamaUrl} with model ${ollamaModel}`);
+      }
+      
       // Initialize Jarvis Core
-      this.jarvisCore = new JarvisCore(openaiKey, geminiKey, anthropicKey);
+      this.jarvisCore = new JarvisCore(openaiKey, geminiKey, anthropicKey, ollamaUrl, ollamaModel);
       await this.jarvisCore.initialize();
       Logger.success('Jarvis Core initialized successfully');
       
