@@ -11,7 +11,7 @@ export class OptimizedAnalyticsManager extends EventEmitter {
   private storage = new LocalAnalyticsStore();
   private currentSession: Partial<TranscriptionSession> | null = null;
   private userId: string = 'default-user';
-  
+
   // Enhanced caching with immediate updates
   private cachedStats: UserStats | null = null;
   private pendingUpdates: {
@@ -20,18 +20,24 @@ export class OptimizedAnalyticsManager extends EventEmitter {
     characters: number;
     timeSaved: number;
   } = { sessions: 0, words: 0, characters: 0, timeSaved: 0 };
-  
+
   // Batch update timer
   private updateTimer: NodeJS.Timeout | null = null;
   private readonly BATCH_UPDATE_DELAY = 5000; // 5 seconds
-  
+
+  // Throttle stats updates
+  private lastEmitTime = 0;
+  private readonly EMIT_THROTTLE_MS = 500;
+  private emitTimeout: NodeJS.Timeout | null = null;
+
+
   constructor() {
     super();
   }
 
   setUserId(userId: string): void {
     Logger.debug('Setting userId from', this.userId, 'to', userId);
-    
+
     // Clear everything when user changes
     if (this.userId !== userId) {
       this.cachedStats = null;
@@ -40,8 +46,12 @@ export class OptimizedAnalyticsManager extends EventEmitter {
         clearTimeout(this.updateTimer);
         this.updateTimer = null;
       }
+      if (this.emitTimeout) {
+        clearTimeout(this.emitTimeout);
+        this.emitTimeout = null;
+      }
     }
-    
+
     this.userId = userId;
     this.storage.setUserId(userId);
   }
@@ -52,12 +62,12 @@ export class OptimizedAnalyticsManager extends EventEmitter {
 
   startSession(): string {
     const sessionId = Date.now().toString();
-    
+
     // Warn if there's already an active session
     if (this.currentSession) {
       Logger.warning(`📊 [Analytics] WARNING: Starting new session ${sessionId} while session ${this.currentSession.id} is still active!`);
     }
-    
+
     this.currentSession = {
       id: sessionId,
       startTime: new Date(),
@@ -69,7 +79,7 @@ export class OptimizedAnalyticsManager extends EventEmitter {
 
   async endSession(transcriptionText: string, audioLengthMs: number, model: string = 'whisper-local', mode: 'dictation' | 'command' = 'dictation'): Promise<void> {
     Logger.info(`📊 [Analytics] endSession called - currentSession: ${!!this.currentSession}, sessionId: ${this.currentSession?.id}, userId: ${this.userId}, isAuthenticated: ${this.storage['isAuthenticated']}`);
-    
+
     // Add extra debug logging
     console.log('📊 [DEBUG] Analytics state:', {
       userId: this.userId,
@@ -78,7 +88,7 @@ export class OptimizedAnalyticsManager extends EventEmitter {
       sessionId: this.currentSession?.id,
       transcriptionLength: transcriptionText.length
     });
-    
+
     if (!this.currentSession) {
       Logger.warning('📊 [Analytics] No current session to end');
       return;
@@ -135,32 +145,23 @@ export class OptimizedAnalyticsManager extends EventEmitter {
       } as any;
       Logger.info('📊 [Analytics] Initialized default cached stats for real-time updates');
     }
-    
+
     this.cachedStats.totalSessions += 1;
     this.cachedStats.totalWords += wordCount;
     this.cachedStats.totalCharacters += characterCount;
     this.cachedStats.estimatedTimeSavedMs += timeSaved;
-    
+
     // Update average WPM using cumulative audio time
     const cachedStatsWithAudio = this.cachedStats as any;
     cachedStatsWithAudio._totalAudioMs = (cachedStatsWithAudio._totalAudioMs || 0) + audioLengthMs;
     if (cachedStatsWithAudio._totalAudioMs > 0) {
       this.cachedStats.averageWPM = Math.round((this.cachedStats.totalWords / cachedStatsWithAudio._totalAudioMs) * 60000);
     }
-    
+
     Logger.info(`📊 [Analytics] Session WPM: ${sessionWPM}, Average WPM: ${this.cachedStats.averageWPM}`);
-    
-    // Emit stats update event for real-time dashboard updates
-    Logger.info(`📊 [Analytics] About to emit stats-update event with sessions: ${this.cachedStats.totalSessions}`);
-    this.emit('stats-update', this.cachedStats);
-    Logger.info(`📊 [Analytics] Emitted stats-update event`);
-    Logger.info(`📊 [Analytics] Updated cached stats - sessions: ${this.cachedStats.totalSessions}, words: ${this.cachedStats.totalWords}`);
-    
-    // Also emit from main thread to ensure IPC works
-    process.nextTick(() => {
-      Logger.info(`📊 [Analytics] Emitting stats-update from main thread`);
-      this.emit('stats-update', this.cachedStats);
-    });
+
+    // Emit stats update event for real-time dashboard updates (throttled)
+    this.emitStatsUpdate();
 
     // Save session to local storage (non-blocking)
     Logger.info(`📊 [Analytics] Saving session locally - sessionId: ${session.id}, words: ${wordCount}`);
@@ -173,7 +174,7 @@ export class OptimizedAnalyticsManager extends EventEmitter {
     const endedSessionId = this.currentSession.id;
     this.currentSession = null;
     Logger.info(`📊 [Analytics] Session ${endedSessionId} ended successfully - totalSessions now: ${this.cachedStats?.totalSessions || 'unknown'}`);
-    
+
     // Log listener count to debug real-time updates
     Logger.info(`📊 [Analytics] Event listeners for stats-update: ${this.listenerCount('stats-update')}`);
   }
@@ -198,13 +199,44 @@ export class OptimizedAnalyticsManager extends EventEmitter {
     try {
       // Update local storage stats in batch
       await this.storage.updateStatsInBatch(this.pendingUpdates);
-      
+
       // Clear pending updates
       this.pendingUpdates = { sessions: 0, words: 0, characters: 0, timeSaved: 0 };
     } catch (error) {
       Logger.error('Failed to perform batch update:', error);
       // Keep pending updates for retry
     }
+  }
+
+  // Throttled event emission
+  private emitStatsUpdate(): void {
+    const now = Date.now();
+    const timeSinceLastEmit = now - this.lastEmitTime;
+
+    if (timeSinceLastEmit >= this.EMIT_THROTTLE_MS) {
+      // Time threshold passed, emit immediately
+      this.performEmit();
+    } else {
+      // Too soon, schedule for later if not already scheduled
+      if (!this.emitTimeout) {
+        const delay = this.EMIT_THROTTLE_MS - timeSinceLastEmit;
+        this.emitTimeout = setTimeout(() => {
+          this.performEmit();
+        }, delay);
+      }
+    }
+  }
+
+  private performEmit(): void {
+    if (this.emitTimeout) {
+      clearTimeout(this.emitTimeout);
+      this.emitTimeout = null;
+    }
+
+    this.lastEmitTime = Date.now();
+
+    Logger.info(`📊 [Analytics] Emitting stats-update (listeners: ${this.listenerCount('stats-update')})`);
+    this.emit('stats-update', this.cachedStats);
   }
 
   async getStats(): Promise<UserStats | null> {
@@ -239,16 +271,16 @@ export class OptimizedAnalyticsManager extends EventEmitter {
     // Only fetch recent sessions for time-based calculations (last 30 days)
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
+
     const recentSessions = await this.storage.getUserSessionsInDateRange(
-      this.userId, 
-      thirtyDaysAgo, 
+      this.userId,
+      thirtyDaysAgo,
       new Date()
     );
 
     if (recentSessions && recentSessions.length > 0) {
       const recentSavings = TimeSavingsCalculator.calculateCumulativeSavings(recentSessions);
-      
+
       // Calculate average WPM from sessions
       let totalWords = 0;
       let totalAudioMs = 0;
@@ -257,7 +289,7 @@ export class OptimizedAnalyticsManager extends EventEmitter {
         totalAudioMs += session.metadata?.audioLengthMs || 0;
       }
       const calculatedWPM = totalAudioMs > 0 ? Math.round((totalWords / totalAudioMs) * 60000) : 0;
-      
+
       this.cachedStats = {
         ...baseStats,
         averageWPM: calculatedWPM,
@@ -286,7 +318,7 @@ export class OptimizedAnalyticsManager extends EventEmitter {
       clearTimeout(this.updateTimer);
       this.updateTimer = null;
     }
-    
+
     if (this.pendingUpdates.sessions > 0) {
       await this.performBatchUpdate();
     }

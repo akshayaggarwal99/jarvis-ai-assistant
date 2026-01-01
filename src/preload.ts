@@ -7,10 +7,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   refreshAnalytics: () => ipcRenderer.invoke('refresh-analytics'),
   onStatsUpdate: (callback: (stats: any) => void) => {
     console.log('📊 [Preload] Setting up onStatsUpdate listener');
-    ipcRenderer.on('stats-update', (_event, stats) => {
+    const listener = (_event: any, stats: any) => {
       console.log('📊 [Preload] Received stats-update event:', stats);
       callback(stats);
-    });
+    };
+    ipcRenderer.on('stats-update', listener);
+    return () => {
+      console.log('📊 [Preload] Removing onStatsUpdate listener');
+      ipcRenderer.removeListener('stats-update', listener);
+    };
   },
   pasteLastTranscription: () => ipcRenderer.send('paste-last-transcription'),
   getLastTranscription: () => ipcRenderer.invoke('get-last-transcription'),

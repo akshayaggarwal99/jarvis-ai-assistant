@@ -98,7 +98,7 @@ export class LocalWhisperTranscriber {
   constructor() {
     // Set model cache directory in app data
     this.modelsDir = path.join(app.getPath('userData'), 'models', 'whisper');
-    
+
     // Ensure models directory exists
     if (!fs.existsSync(this.modelsDir)) {
       fs.mkdirSync(this.modelsDir, { recursive: true });
@@ -143,7 +143,7 @@ export class LocalWhisperTranscriber {
     }
 
     const modelPath = this.getModelPath(modelId);
-    
+
     // Check if already downloaded
     if (fs.existsSync(modelPath)) {
       Logger.info(`🎤 [LocalWhisper] Model ${modelId} already downloaded`);
@@ -155,7 +155,7 @@ export class LocalWhisperTranscriber {
     return new Promise((resolve) => {
       const tempPath = modelPath + '.download';
       const file = fs.createWriteStream(tempPath);
-      
+
       const downloadWithRedirects = (url: string, redirectCount = 0) => {
         if (redirectCount > 5) {
           Logger.error('🎤 [LocalWhisper] Too many redirects');
@@ -186,17 +186,17 @@ export class LocalWhisperTranscriber {
           response.on('data', (chunk) => {
             downloadedBytes += chunk.length;
             file.write(chunk);
-            
+
             const percent = Math.round((downloadedBytes / totalBytes) * 100);
             const downloadedMB = Math.round(downloadedBytes / 1024 / 1024);
             const totalMB = Math.round(totalBytes / 1024 / 1024);
-            
+
             onProgress?.(percent, downloadedMB, totalMB);
           });
 
           response.on('end', () => {
             file.end();
-            
+
             // Rename temp file to final path
             try {
               fs.renameSync(tempPath, modelPath);
@@ -264,20 +264,20 @@ export class LocalWhisperTranscriber {
       const minDurationMs = 1100; // 1.1 seconds to be safe
       const minSamples = Math.ceil(minDurationMs * sampleRate / 1000);
       const minBytes = minSamples * bytesPerSample;
-      
+
       let processedBuffer = audioBuffer;
       if (audioBuffer.length < minBytes) {
         const currentDurationMs = Math.round((audioBuffer.length / bytesPerSample / sampleRate) * 1000);
         Logger.info(`🎤 [LocalWhisper] Audio too short (${currentDurationMs}ms), padding to ${minDurationMs}ms`);
-        
+
         // Create a new buffer with silence padding
         const paddedBuffer = Buffer.alloc(minBytes, 0); // 0 = silence for PCM
         audioBuffer.copy(paddedBuffer, 0); // Copy original audio at the beginning
         processedBuffer = paddedBuffer;
       }
-      
+
       const wavBuffer = this.pcmToWav(processedBuffer, 16000, 1, 16);
-      
+
       // Write to temp file (whisper-node-addon requires file path)
       const tempFile = path.join(app.getPath('temp'), `whisper-${Date.now()}.wav`);
       fs.writeFileSync(tempFile, wavBuffer);
@@ -285,11 +285,11 @@ export class LocalWhisperTranscriber {
       try {
         // Import transcribe function dynamically
         const { transcribe } = await import('whisper-node-addon');
-        
+
         // Transcribe
         // Note: whisper-node-addon returns Promise<string[][]> - array of [timestamp, text] arrays
         Logger.info('🎤 [LocalWhisper] Calling whisper-node-addon...');
-        
+
         const result = await transcribe({
           model: this.getModelPath(modelId),
           fname_inp: tempFile,
@@ -298,7 +298,7 @@ export class LocalWhisperTranscriber {
           no_prints: false,
           no_timestamps: true
         });
-        
+
         Logger.info(`🎤 [LocalWhisper] transcribe() returned: ${typeof result}, isArray: ${Array.isArray(result)}`);
         if (result) {
           Logger.info(`🎤 [LocalWhisper] Result length: ${result.length}, first item: ${JSON.stringify(result[0])}`);
@@ -306,7 +306,7 @@ export class LocalWhisperTranscriber {
 
         // Parse result - it's a string[][] (array of [timestamp, text] tuples)
         let transcriptText = '';
-        
+
         if (Array.isArray(result) && result.length > 0) {
           // Each element is [timestamp, text] or just text
           const textParts: string[] = [];
@@ -322,12 +322,20 @@ export class LocalWhisperTranscriber {
             }
           }
           transcriptText = textParts.join(' ').trim();
+
+          // Filter out silence tokens
+          transcriptText = transcriptText.replace(/(?:\[BLANK_AUDIO\]|\[\s*Silence\s*\]|\(\s*Silence\s*\))/gi, '').trim();
+
           Logger.info(`🎤 [LocalWhisper] Extracted text from array: "${transcriptText}"`);
         } else if (typeof result === 'string' && result.trim()) {
           transcriptText = result.trim();
+          // Filter out silence tokens
+          transcriptText = transcriptText.replace(/(?:\[BLANK_AUDIO\]|\[\s*Silence\s*\]|\(\s*Silence\s*\))/gi, '').trim();
           Logger.info(`🎤 [LocalWhisper] Got text from string result: "${transcriptText}"`);
         } else if (typeof result === 'object' && result !== null && (result as any).text) {
           transcriptText = (result as any).text.trim();
+          // Filter out silence tokens
+          transcriptText = transcriptText.replace(/(?:\[BLANK_AUDIO\]|\[\s*Silence\s*\]|\(\s*Silence\s*\))/gi, '').trim();
           Logger.info(`🎤 [LocalWhisper] Got text from object result: "${transcriptText}"`);
         }
 
@@ -412,11 +420,11 @@ export class LocalWhisperTranscriber {
   deleteModel(modelId: string): boolean {
     try {
       const modelPath = this.getModelPath(modelId);
-      
+
       if (currentModelId === modelId) {
         LocalWhisperTranscriber.unloadModel();
       }
-      
+
       if (fs.existsSync(modelPath)) {
         fs.unlinkSync(modelPath);
         Logger.info(`🎤 [LocalWhisper] Model ${modelId} deleted`);
@@ -435,7 +443,7 @@ export class LocalWhisperTranscriber {
   clearAllModels(): boolean {
     try {
       LocalWhisperTranscriber.unloadModel();
-      
+
       if (fs.existsSync(this.modelsDir)) {
         fs.rmSync(this.modelsDir, { recursive: true, force: true });
         fs.mkdirSync(this.modelsDir, { recursive: true });

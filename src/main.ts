@@ -162,6 +162,26 @@ let pendingHandsFreeStop = false; // Prevent multiple stop requests
 
 const DEMO_MODE = process.env.DEMO_MODE === 'true';
 
+// Setup global listeners once
+function setupGlobalListeners() {
+  // Remove any existing listeners to avoid duplicates
+  analyticsManager.removeAllListeners('stats-update');
+
+  // Set up real-time stats updates listener
+  analyticsManager.onStatsUpdate((stats) => {
+    Logger.info(`📊 [Analytics] Real-time stats update received in main.ts, sessions: ${stats?.totalSessions}`);
+    // Get the current dashboard window from windowManager
+    const currentDashboard = windowManager.getWindow('dashboard');
+    if (currentDashboard && !currentDashboard.isDestroyed()) {
+      Logger.info('📊 [Analytics] Sending stats update to dashboard window');
+      currentDashboard.webContents.send('stats-update', stats);
+      Logger.info('📊 [Analytics] Stats update sent to dashboard');
+    }
+  });
+
+  Logger.info(`📊 [Analytics] Global stats update listener registered`);
+}
+
 async function initializeJarvis() {
   try {
     // Initialize secure API service
@@ -217,6 +237,9 @@ async function initializeJarvis() {
       // Set nudge service on already-registered IPC handlers
       NudgeIPCHandlers.getInstance().setNudgeService(userNudgeService);
     }
+
+    // Set up global listeners
+    setupGlobalListeners();
   } catch (error) {
     Logger.error('Failed to initialize Jarvis Core:', error);
   }
@@ -234,26 +257,6 @@ function createWaveformWindow() {
 
 function createDashboardWindow() {
   const dashboardWindow = windowManager.createDashboardWindow();
-
-  // Remove any existing listeners to avoid duplicates
-  analyticsManager.removeAllListeners('stats-update');
-
-  // Set up real-time stats updates listener
-  const unsubscribe = analyticsManager.onStatsUpdate((stats) => {
-    Logger.info(`📊 [Analytics] Real-time stats update received in main.ts, sessions: ${stats?.totalSessions}`);
-    // Get the current dashboard window from windowManager
-    const currentDashboard = windowManager.getWindow('dashboard');
-    if (currentDashboard && !currentDashboard.isDestroyed()) {
-      Logger.info('📊 [Analytics] Sending stats update to dashboard window');
-      console.log('📊 [Main] About to send stats-update to webContents:', stats);
-      currentDashboard.webContents.send('stats-update', stats);
-      Logger.info('📊 [Analytics] Stats update sent to dashboard');
-    } else {
-      Logger.warning('📊 [Analytics] Dashboard window not available for stats update');
-    }
-  });
-
-  Logger.info(`📊 [Analytics] Stats update listener registered, total listeners: ${analyticsManager.listenerCount('stats-update')}`);
 
   // Optimize window loading with proper state management
   dashboardWindow.once('ready-to-show', async () => {

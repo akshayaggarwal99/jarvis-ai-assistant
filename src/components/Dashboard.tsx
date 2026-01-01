@@ -55,7 +55,7 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
   const [showAddWord, setShowAddWord] = useState(false);
   const [newWord, setNewWord] = useState('');
   const [newPronunciation, setNewPronunciation] = useState('');
-  
+
   // Update state management
   const [updateNotification, setUpdateNotification] = useState<{
     visible: boolean;
@@ -64,17 +64,17 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
     isMajor?: boolean;
     downloadUrl?: string;
   }>({ visible: false, version: '', releaseNotes: '', isMajor: false, downloadUrl: '' });
-  
+
   const [updateProgress, setUpdateProgress] = useState<{
     visible: boolean;
     progress: number;
   }>({ visible: false, progress: 0 });
-  
+
   const [updateReady, setUpdateReady] = useState(false);
-  
+
   // Success modal state for Pro upgrade celebration
   const [showSuccessModal, setShowSuccessModal] = useState(false);
-  
+
   const { user, signOut } = useAuth();
   // Open-source build: All features unlocked, no subscription check needed
   const [showSignOutModal, setShowSignOutModal] = useState(false);
@@ -112,13 +112,13 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
           setLoading(false);
         }
       };
-      
+
       // Add a small delay to ensure IPC handlers are registered and set-user-id call completes
       const timer = setTimeout(loadData, 300);
-      
+
       // Still poll occasionally for reliability (reduced to every 2 minutes)
       const interval = setInterval(loadDashboardData, 120000);
-      
+
       return () => {
         clearTimeout(timer);
         clearInterval(interval);
@@ -136,20 +136,24 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
   // Separate effect for real-time stats listener - runs after stats are initialized
   useEffect(() => {
     if (!user?.uid) return; // Only set up listener when user is authenticated
-    
+
     // Listen for real-time stats updates using the proper API
     const handleStatsUpdate = (updatedStats: UserStats) => {
       setStats(updatedStats);
     };
-    
+
     const electronAPI = (window as any).electronAPI;
+    let cleanup: (() => void) | undefined;
+
     if (electronAPI?.onStatsUpdate) {
-      electronAPI.onStatsUpdate(handleStatsUpdate);
+      cleanup = electronAPI.onStatsUpdate(handleStatsUpdate);
     }
-    
-    // Note: The onStatsUpdate API doesn't provide a cleanup method
-    // but that's okay since the listener will be cleaned up when the window closes
-  }, [user?.uid, stats]); // Re-run when user changes or stats are initialized
+
+    // Cleanup listener when component unmounts
+    return () => {
+      if (cleanup) cleanup();
+    };
+  }, [user?.uid]); // Removed 'stats' from dependency to prevent infinite re-subscription loop
 
   // Load hotkey settings and user name
   useEffect(() => {
@@ -248,7 +252,7 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
 
   const addDictionaryEntry = async () => {
     if (!newWord.trim()) return;
-    
+
     try {
       await (window as any).electronAPI?.addDictionaryEntry(newWord, newPronunciation || undefined);
       setNewWord('');
@@ -289,12 +293,12 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
   const handleUpdateDownload = async () => {
     const electronAPI = (window as any).electronAPI;
     if (!electronAPI || !updateNotification.downloadUrl) return;
-    
+
     try {
       // Hide notification and show progress immediately
       setUpdateNotification({ visible: false, version: '', releaseNotes: '', isMajor: false, downloadUrl: '' });
       setUpdateProgress({ visible: true, progress: 0 });
-      
+
       await electronAPI.downloadUpdate({
         downloadUrl: updateNotification.downloadUrl,
         version: updateNotification.version
@@ -345,7 +349,7 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
             ))}
           </nav>
         </aside>
-        
+
         {/* Glass Main Content Skeleton */}
         <div className="flex-1 p-6 bg-transparent overflow-y-auto scrollbar-hide">
           <div className="flex items-center justify-between mb-8">
@@ -358,25 +362,25 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
               <div className="w-20 h-10 bg-white/20 rounded-xl animate-pulse animate-shimmer"></div>
             </div>
           </div>
-          
-            {/* Liquid Glass Stats Cards Skeleton */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-              {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="card-glass p-6 shadow-xl">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="w-12 h-12 bg-white/20 rounded-xl animate-pulse animate-shimmer"></div>
-                    <div className="w-16 h-6 bg-white/20 rounded-full animate-pulse animate-shimmer"></div>
-                  </div>
-                  <div className="w-20 h-8 bg-white/20 rounded animate-pulse animate-shimmer mb-2"></div>
-                  <div className="w-24 h-4 bg-white/15 rounded animate-pulse animate-shimmer mb-3"></div>
-                  <div className="w-full h-2 bg-white/15 rounded-full animate-pulse animate-shimmer"></div>
+
+          {/* Liquid Glass Stats Cards Skeleton */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="card-glass p-6 shadow-xl">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-12 h-12 bg-white/20 rounded-xl animate-pulse animate-shimmer"></div>
+                  <div className="w-16 h-6 bg-white/20 rounded-full animate-pulse animate-shimmer"></div>
                 </div>
-              ))}
-            </div>
-          
+                <div className="w-20 h-8 bg-white/20 rounded animate-pulse animate-shimmer mb-2"></div>
+                <div className="w-24 h-4 bg-white/15 rounded animate-pulse animate-shimmer mb-3"></div>
+                <div className="w-full h-2 bg-white/15 rounded-full animate-pulse animate-shimmer"></div>
+              </div>
+            ))}
+          </div>
+
           {/* Quick Actions Skeleton */}
           <div className="w-full h-32 card-glass animate-pulse animate-shimmer mb-8 shadow-xl"></div>
-          
+
           {/* Recent Activity Skeleton */}
           <div className="card-glass p-6 shadow-xl">
             <div className="w-32 h-6 bg-white/20 rounded animate-pulse animate-shimmer mb-6"></div>
@@ -429,7 +433,7 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
         <div className="absolute inset-0 bg-gradient-to-r from-black/30 to-transparent"></div>
         {/* Subtle inner shadow for depth */}
         <div className="absolute inset-0 shadow-[inset_-1px_0_0_rgba(255,255,255,0.1)]"></div>
-        
+
         <div className="relative z-10 h-full flex flex-col">
           {/* Logo Section */}
           <div className="px-6 pt-12 pb-8">
@@ -437,8 +441,8 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
               <div className="flex items-center space-x-3">
                 <div className="w-10 h-10 bg-gradient-to-br from-white/20 to-white/10 rounded-xl flex items-center justify-center backdrop-blur-sm border border-white/20 shadow-lg">
                   <svg xmlns="http://www.w3.org/2000/svg" enableBackground="new 0 0 20 20" height="24px" viewBox="0 0 20 20" width="24px" fill="#ffffff">
-                    <rect fill="none" height="20" width="20" y="0"/>
-                    <path d="M15.98,5.82L10,2.5L4.02,5.82l3.8,2.11C8.37,7.36,9.14,7,10,7s1.63,0.36,2.17,0.93L15.98,5.82z M8.5,10 c0-0.83,0.67-1.5,1.5-1.5s1.5,0.67,1.5,1.5s-0.67,1.5-1.5,1.5S8.5,10.83,8.5,10z M9.25,17.08l-6-3.33V7.11L7.1,9.24 C7.03,9.49,7,9.74,7,10c0,1.4,0.96,2.57,2.25,2.91V17.08z M10.75,17.08v-4.18C12.04,12.57,13,11.4,13,10c0-0.26-0.03-0.51-0.1-0.76 l3.85-2.14l0,6.64L10.75,17.08z"/>
+                    <rect fill="none" height="20" width="20" y="0" />
+                    <path d="M15.98,5.82L10,2.5L4.02,5.82l3.8,2.11C8.37,7.36,9.14,7,10,7s1.63,0.36,2.17,0.93L15.98,5.82z M8.5,10 c0-0.83,0.67-1.5,1.5-1.5s1.5,0.67,1.5,1.5s-0.67,1.5-1.5,1.5S8.5,10.83,8.5,10z M9.25,17.08l-6-3.33V7.11L7.1,9.24 C7.03,9.49,7,9.74,7,10c0,1.4,0.96,2.57,2.25,2.91V17.08z M10.75,17.08v-4.18C12.04,12.57,13,11.4,13,10c0-0.26-0.03-0.51-0.1-0.76 l3.85-2.14l0,6.64L10.75,17.08z" />
                   </svg>
                 </div>
                 <div className="flex flex-col">
@@ -448,71 +452,67 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
               </div>
             </div>
           </div>
-          
+
           {/* Enhanced Navigation */}
           <nav className="flex-1 px-6 py-6 space-y-3 overflow-y-auto scrollbar-hide min-h-0">
-            <button 
+            <button
               onClick={() => setCurrentView('dashboard')}
-              className={`group w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 text-left ${
-                currentView === 'dashboard' 
-                  ? 'text-white bg-white/25 backdrop-blur-xl shadow-lg border border-white/20' 
+              className={`group w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 text-left ${currentView === 'dashboard'
+                  ? 'text-white bg-white/25 backdrop-blur-xl shadow-lg border border-white/20'
                   : 'text-white/80 hover:text-white hover:bg-white/15 hover:backdrop-blur-lg hover:border hover:border-white/10'
-              }`}
+                }`}
             >
               <span className="material-icons-outlined text-[18px] group-hover:scale-110 transition-transform duration-200">dashboard</span>
               <span className="text-sm font-medium">Dashboard</span>
             </button>
-            <button 
+            <button
               onClick={() => setCurrentView('analytics')}
-              className={`group w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 text-left ${
-                currentView === 'analytics' 
-                  ? 'text-white bg-white/25 backdrop-blur-xl shadow-lg border border-white/20' 
+              className={`group w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 text-left ${currentView === 'analytics'
+                  ? 'text-white bg-white/25 backdrop-blur-xl shadow-lg border border-white/20'
                   : 'text-white/80 hover:text-white hover:bg-white/15 hover:backdrop-blur-lg hover:border hover:border-white/10'
-              }`}
+                }`}
             >
               <span className="material-icons-outlined text-[18px] group-hover:scale-110 transition-transform duration-200">analytics</span>
               <span className="text-sm font-medium">Analytics</span>
             </button>
-            <button 
+            <button
               onClick={() => setCurrentView('dictionary')}
-              className={`group w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 text-left ${
-                currentView === 'dictionary' 
-                  ? 'text-white bg-white/25 backdrop-blur-xl shadow-lg border border-white/20' 
+              className={`group w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 text-left ${currentView === 'dictionary'
+                  ? 'text-white bg-white/25 backdrop-blur-xl shadow-lg border border-white/20'
                   : 'text-white/80 hover:text-white hover:bg-white/15 hover:backdrop-blur-lg hover:border hover:border-white/10'
-              }`}
+                }`}
             >
               <span className="material-icons-outlined text-[18px] group-hover:scale-110 transition-transform duration-200">book</span>
               <span className="text-sm font-medium">Dictionary</span>
             </button>
-            <button 
+            <button
               onClick={() => setCurrentView('settings')}
-              className={`group w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 text-left ${
-                currentView === 'settings' 
-                  ? 'text-white bg-white/25 backdrop-blur-xl shadow-lg border border-white/20' 
+              className={`group w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 text-left ${currentView === 'settings'
+                  ? 'text-white bg-white/25 backdrop-blur-xl shadow-lg border border-white/20'
                   : 'text-white/80 hover:text-white hover:bg-white/15 hover:backdrop-blur-lg hover:border hover:border-white/10'
-              }`}
+                }`}
             >
               <span className="material-icons-outlined text-[18px] group-hover:scale-110 transition-transform duration-200">settings</span>
               <span className="text-sm font-medium">Settings</span>
             </button>
           </nav>
 
-        {/* Open Source Build - Pro Status */}
-        <div className="px-6 pb-6 flex-shrink-0">
-          <div className="p-4 bg-gradient-to-r from-green-500/20 to-emerald-500/20 border border-green-500/30 rounded-xl">
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-white/90">Open Source ❤️</div>
-              <div className="w-2 h-2 bg-green-400 rounded-full"></div>
-            </div>
-            <div className="text-xs text-white/60 mt-1">Everything unlocked forever</div>
-            <div 
-              className="text-[10px] text-white/40 mt-2 cursor-pointer hover:text-white/60 transition-colors"
-              onClick={() => (window as any).electronAPI?.openExternal?.('https://github.com/akshayaggarwal99/jarvis-ai-assistant')}
-            >
-              Love it? ⭐ on GitHub or tell a friend
+          {/* Open Source Build - Pro Status */}
+          <div className="px-6 pb-6 flex-shrink-0">
+            <div className="p-4 bg-gradient-to-r from-green-500/20 to-emerald-500/20 border border-green-500/30 rounded-xl">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-white/90">Open Source ❤️</div>
+                <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+              </div>
+              <div className="text-xs text-white/60 mt-1">Everything unlocked forever</div>
+              <div
+                className="text-[10px] text-white/40 mt-2 cursor-pointer hover:text-white/60 transition-colors"
+                onClick={() => (window as any).electronAPI?.openExternal?.('https://github.com/akshayaggarwal99/jarvis-ai-assistant')}
+              >
+                Love it? ⭐ on GitHub or tell a friend
+              </div>
             </div>
           </div>
-        </div>
         </div>
       </aside>
 
@@ -533,9 +533,8 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
           <div className="flex items-center space-x-4" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
             <button
               onClick={() => setCurrentView('help')}
-              className={`${theme.text.secondary} hover:${theme.text.primary} transition-all duration-200 p-2 ${theme.radius.lg} hover:${theme.glass.secondary} ${
-                currentView === 'help' ? `${theme.text.primary} ${theme.glass.active}` : ''
-              }`}
+              className={`${theme.text.secondary} hover:${theme.text.primary} transition-all duration-200 p-2 ${theme.radius.lg} hover:${theme.glass.secondary} ${currentView === 'help' ? `${theme.text.primary} ${theme.glass.active}` : ''
+                }`}
               title="Help & Support"
             >
               <span className="material-icons-outlined">help</span>
@@ -552,34 +551,34 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
 
         {/* Render different views based on currentView */}
         <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-        {currentView === 'dashboard' && (
-          <DashboardView
-            stats={stats}
-            currentHotkey={currentHotkey}
-            onNavigate={(view) => setCurrentView(view as ViewType)}
-          />
-        )}
+          {currentView === 'dashboard' && (
+            <DashboardView
+              stats={stats}
+              currentHotkey={currentHotkey}
+              onNavigate={(view) => setCurrentView(view as ViewType)}
+            />
+          )}
 
-        {currentView === 'dictionary' && (
-          <DictionaryView
-            entries={dictionaryEntries}
-            showAddWord={showAddWord}
-            newWord={newWord}
-            newPronunciation={newPronunciation}
-            onShowAddWord={setShowAddWord}
-            onNewWordChange={setNewWord}
-            onNewPronunciationChange={setNewPronunciation}
-            onAddEntry={addDictionaryEntry}
-            onRemoveEntry={removeDictionaryEntry}
-          />
-        )}
+          {currentView === 'dictionary' && (
+            <DictionaryView
+              entries={dictionaryEntries}
+              showAddWord={showAddWord}
+              newWord={newWord}
+              newPronunciation={newPronunciation}
+              onShowAddWord={setShowAddWord}
+              onNewWordChange={setNewWord}
+              onNewPronunciationChange={setNewPronunciation}
+              onAddEntry={addDictionaryEntry}
+              onRemoveEntry={removeDictionaryEntry}
+            />
+          )}
 
-        {currentView === 'analytics' && <AnalyticsView stats={stats} />}
+          {currentView === 'analytics' && <AnalyticsView stats={stats} />}
 
-        {currentView === 'help' && <HelpView />}
+          {currentView === 'help' && <HelpView />}
 
-        {/* Settings View */}
-        {currentView === 'settings' && <Settings />}
+          {/* Settings View */}
+          {currentView === 'settings' && <Settings />}
         </div>
       </main>
 
@@ -599,7 +598,7 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
                 Are you sure you want to sign out?
               </p>
             </div>
-            
+
             {/* Warning message */}
             <div className={`${theme.glass.secondary} ${theme.radius.lg} p-4 mb-8`}>
               <div className="flex items-start space-x-3">
@@ -616,7 +615,7 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
                 </div>
               </div>
             </div>
-            
+
             {/* Action buttons */}
             <div className="flex gap-3">
               <button
@@ -645,18 +644,18 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
         onDownload={handleUpdateDownload}
         onDismiss={handleUpdateDismiss}
       />
-      
+
       <UpdateProgress
         isVisible={updateProgress.visible}
         progress={updateProgress.progress}
       />
-      
+
       <UpdateReady
         isVisible={updateReady}
         onRestart={handleUpdateRestart}
         onLater={handleUpdateLater}
       />
-      
+
       {/* Success Modal for Pro upgrade celebration */}
       <SuccessModal
         isOpen={showSuccessModal}
