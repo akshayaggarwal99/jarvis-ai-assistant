@@ -67,14 +67,26 @@ export class WindowManager {
     if (existing && !existing.isDestroyed()) {
       return existing;
     }
-    
-    const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize;
-    
+
+    // Get the active display (where the cursor is)
+    const cursorPoint = screen.getCursorScreenPoint();
+    const activeDisplay = screen.getDisplayNearestPoint(cursorPoint);
+    const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = activeDisplay.workArea;
+
+    // Window dimensions (sized to fit compact 48x32 bar with small padding)
+    const windowWidth = 80;
+    const windowHeight = 50;
+    const margin = 20; // Margin from screen edge
+
+    // Position in bottom-right corner of active display
+    const x = displayX + displayWidth - windowWidth - margin;
+    const y = displayY + displayHeight - windowHeight - margin;
+
     const window = new BrowserWindow({
-      width: 200,
-      height: 60,
-      x: screenWidth / 2 - 100,
-      y: screenHeight - 100,
+      width: windowWidth,
+      height: windowHeight,
+      x,
+      y,
       frame: false,
       alwaysOnTop: true,
       transparent: true,
@@ -89,19 +101,43 @@ export class WindowManager {
         contextIsolation: false
       }
     });
-    
+
     window.loadFile(this.getResourcePath('waveform.html'));
     window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     window.setAlwaysOnTop(true, 'screen-saver');
-    
+
     window.webContents.once('dom-ready', () => {
       const appSettings = AppSettingsService.getInstance();
       const settings = appSettings.getSettings();
       window.webContents.send('audio-feedback-setting', settings.audioFeedback);
     });
-    
+
     this.windows.set('waveform', window);
     return window;
+  }
+
+  /**
+   * Reposition waveform window to bottom-right of active monitor
+   */
+  repositionWaveformWindow(): void {
+    const window = this.windows.get('waveform');
+    if (!window || window.isDestroyed()) return;
+
+    // Get the active display (where the cursor is)
+    const cursorPoint = screen.getCursorScreenPoint();
+    const activeDisplay = screen.getDisplayNearestPoint(cursorPoint);
+    const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = activeDisplay.workArea;
+
+    // Window dimensions (sized to fit compact 48x32 bar with small padding)
+    const windowWidth = 80;
+    const windowHeight = 50;
+    const margin = 20;
+
+    // Position in bottom-right corner of active display
+    const x = displayX + displayWidth - windowWidth - margin;
+    const y = displayY + displayHeight - windowHeight - margin;
+
+    window.setPosition(x, y);
   }
   
   createDashboardWindow(): BrowserWindow {

@@ -10,7 +10,7 @@ export class MenuService {
   private tray: Tray | null = null;
   private windowManager: WindowManager;
   private updateService: UpdateService | null = null;
-  
+
   private constructor() {
     this.windowManager = WindowManager.getInstance();
   }
@@ -376,4 +376,3 @@ export class MenuService {
     return this.tray;
   }
 }
-// trigger recompile

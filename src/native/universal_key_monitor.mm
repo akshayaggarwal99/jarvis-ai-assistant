@@ -25,7 +25,7 @@ static bool keyPressed = false;
 // Key flag mappings for NSEvent
 static const std::map<std::string, NSEventModifierFlags> keyFlags = {
     {"fn", NSEventModifierFlagFunction},
-    {"fn+ctrl", NSEventModifierFlagFunction},  // Special combo - handled separately
+    {"fn+shift", NSEventModifierFlagFunction},  // Special combo - handled separately
     {"option", NSEventModifierFlagOption},
     {"control", NSEventModifierFlagControl},
     {"command", NSEventModifierFlagCommand}
@@ -81,23 +81,23 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         return event;
     }
     
-    if (monitoredKey == "fn+ctrl") {
-        // Handle Fn+Ctrl combination
+    if (monitoredKey == "fn+shift") {
+        // Handle Fn+Shift combination
         if (type == kCGEventFlagsChanged) {
             CGEventFlags flags = CGEventGetFlags(event);
-            // Require BOTH Fn AND Ctrl to be pressed
-            bool isFnCtrlPressed = ((flags & kCGEventFlagMaskSecondaryFn) != 0) &&
-                                   ((flags & kCGEventFlagMaskControl) != 0);
-            // Check for other modifiers (excluding Ctrl since it's part of our combo)
-            bool hasOtherModifiers = (flags & (kCGEventFlagMaskCommand | kCGEventFlagMaskShift | kCGEventFlagMaskAlternate)) != 0;
+            // Require BOTH Fn AND Shift to be pressed
+            bool isFnShiftPressed = ((flags & kCGEventFlagMaskSecondaryFn) != 0) &&
+                                    ((flags & kCGEventFlagMaskShift) != 0);
+            // Check for other modifiers (excluding Shift since it's part of our combo)
+            bool hasOtherModifiers = (flags & (kCGEventFlagMaskCommand | kCGEventFlagMaskControl | kCGEventFlagMaskAlternate)) != 0;
 
-            if (isFnCtrlPressed != keyPressed) {
-                keyPressed = isFnCtrlPressed;
-                handleKeyEvent(isFnCtrlPressed);
+            if (isFnShiftPressed != keyPressed) {
+                keyPressed = isFnShiftPressed;
+                handleKeyEvent(isFnShiftPressed);
             }
 
-            // Suppress pure fn+ctrl events to prevent system interference
-            if (!hasOtherModifiers && (isFnCtrlPressed || keyPressed)) {
+            // Suppress pure fn+shift events to prevent system interference
+            if (!hasOtherModifiers && (isFnShiftPressed || keyPressed)) {
                 return NULL;
             }
 
@@ -204,7 +204,7 @@ Napi::Value StartMonitoring(const Napi::CallbackInfo& info) {
     }
     
     // OPTIMIZED: Pre-configure system to avoid runtime calls
-    if (keyName == "fn" || keyName == "fn+ctrl") {
+    if (keyName == "fn" || keyName == "fn+shift") {
         // Only log once for debugging
         NSLog(@"Function key monitoring enabled - emoji picker suppression active");
     }
@@ -227,8 +227,8 @@ Napi::Value StartMonitoring(const Napi::CallbackInfo& info) {
     auto it = keyFlags.find(keyName);
     NSEventModifierFlags targetFlag = it->second;
     
-    // For function key (or fn+ctrl combo), use AGGRESSIVE CGEventTap that catches ALL events
-    if (keyName == "fn" || keyName == "fn+ctrl") {
+    // For function key (or fn+shift combo), use AGGRESSIVE CGEventTap that catches ALL events
+    if (keyName == "fn" || keyName == "fn+shift") {
         // Create an aggressive event tap that intercepts EVERYTHING related to function key
         eventTap = CGEventTapCreate(
             kCGSessionEventTap,                   // Session event tap (more compatible)
@@ -256,7 +256,7 @@ Napi::Value StartMonitoring(const Napi::CallbackInfo& info) {
     }
     
     // Also use NSEvent monitoring as backup (for non-fn keys only)
-    if (keyName != "fn" && keyName != "fn+ctrl") {
+    if (keyName != "fn" && keyName != "fn+shift") {
         // Monitor ALL event types globally (even when app is not active)
         globalMonitor = [NSEvent addGlobalMonitorForEventsMatchingMask:(NSEventMaskFlagsChanged | NSEventMaskKeyDown | NSEventMaskKeyUp)
                                                                handler:^(NSEvent *event) {
@@ -318,7 +318,7 @@ Napi::Value StopMonitoring(const Napi::CallbackInfo& info) {
     }
     
     // RESTORE macOS emoji picker functionality when stopping fn monitoring
-    if (monitoredKey == "fn" || monitoredKey == "fn+ctrl") {
+    if (monitoredKey == "fn" || monitoredKey == "fn+shift") {
         system("defaults delete com.apple.HIToolbox AppleFnUsageType 2>/dev/null || true");
         system("defaults write -g NSAutomaticSpellingCorrectionEnabled -bool true");
         system("defaults write -g NSAutomaticTextCompletionEnabled -bool true");

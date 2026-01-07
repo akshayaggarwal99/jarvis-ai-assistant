@@ -518,15 +518,9 @@ async function activateOverlaysAndShortcuts() {
       Logger.info('◆ [Overlays] Suggestion window already exists');
     }
 
-    // Show the waveform window only if showWaveform setting is enabled
-    const currentSettings = appSettings.getSettings();
-    const waveformWindow = getWaveformWindow();
-    if (waveformWindow && currentSettings.showWaveform !== false) {
-      Logger.info('◉ [Overlays] Showing waveform window...');
-      waveformWindow.showInactive();
-    } else if (waveformWindow) {
-      Logger.info('◉ [Overlays] Waveform window hidden per user settings');
-    }
+    // Waveform window stays hidden until recording starts
+    // (it will be shown by push-to-talk or dictation handlers)
+    Logger.info('◉ [Overlays] Waveform window created but hidden until needed');
 
     // Register shortcuts and start monitoring
     Logger.info('⌨ [Overlays] Registering global shortcuts...');
@@ -766,10 +760,12 @@ function startHotkeyMonitoring() {
         waveformWindow?.webContents.send('transcription-start');
       } else {
         waveformWindow?.webContents.send('transcription-complete');
-        // Hide waveform window when transcription completes
-        if (waveformWindow && !waveformWindow.isDestroyed()) {
-          waveformWindow.hide();
-        }
+        // Hide waveform window after success checkmark displays
+        setTimeout(() => {
+          if (waveformWindow && !waveformWindow.isDestroyed()) {
+            waveformWindow.hide();
+          }
+        }, 1200);
       }
     },
     (partialText) => {
@@ -794,8 +790,41 @@ function startHotkeyMonitoring() {
   const powerManager = PowerManagementService.getInstance();
   powerManager.registerService('audio-monitoring', pushToTalkService);
 
-  // Use UniversalKeyService for all modifier keys (fn, fn+ctrl, option, control, command)
-  if (['fn', 'fn+ctrl', 'option', 'control', 'command'].includes(currentHotkey)) {
+  // Handle cmd+shift+space using globalShortcut (toggle mode)
+  if (currentHotkey === 'cmd+shift+space') {
+    Logger.info(`⚙ [Hotkey] Registering global shortcut: Cmd+Shift+Space`);
+
+    try {
+      const registered = globalShortcut.register('CommandOrControl+Shift+Space', async () => {
+        Logger.debug('⚙ [Cmd+Shift+Space] Shortcut triggered');
+
+        // Toggle behavior: if recording, stop; if not recording, start
+        if (pushToTalkService?.active || pushToTalkService?.transcribing) {
+          // Stop recording and transcribe
+          Logger.info('⚙ [Cmd+Shift+Space] Stopping recording...');
+          await handleHotkeyUp();
+        } else {
+          // Start recording
+          Logger.info('⚙ [Cmd+Shift+Space] Starting recording...');
+          await handleHotkeyDown();
+        }
+      });
+
+      if (!registered) {
+        Logger.error('❌ [Hotkey] Failed to register Cmd+Shift+Space shortcut (may be in use by another app)');
+        return;
+      }
+
+      isHotkeyMonitoringActive = true;
+      lastActiveHotkey = currentHotkey;
+      Logger.success('✅ [Hotkey] Cmd+Shift+Space shortcut registered (toggle mode)');
+
+    } catch (error) {
+      Logger.error('❌ [Hotkey] Error registering Cmd+Shift+Space:', error);
+    }
+  }
+  // Use UniversalKeyService for all modifier keys (fn, option, control, command)
+  else if (['fn', 'option', 'control', 'command'].includes(currentHotkey)) {
     Logger.info(`⚙ [Hotkey] Starting universal key monitoring for: ${currentHotkey}`);
 
     try {
@@ -872,6 +901,16 @@ function stopHotkeyMonitoring() {
     }
   }
 
+  // Unregister cmd+shift+space shortcut if registered
+  try {
+    if (globalShortcut.isRegistered('CommandOrControl+Shift+Space')) {
+      globalShortcut.unregister('CommandOrControl+Shift+Space');
+      Logger.info('⚙ [Lifecycle] Cmd+Shift+Space shortcut unregistered');
+    }
+  } catch (error) {
+    Logger.error('⚙ [Lifecycle] Error unregistering Cmd+Shift+Space:', error);
+  }
+
   // Unregister any global shortcuts
   try {
     shortcutService.unregisterAllShortcuts();
@@ -943,6 +982,7 @@ async function handleHotkeyDown() {
   if (waveformWindow && !waveformWindow.isDestroyed()) {
     // Only show waveform if setting allows it
     if (shouldShowWaveform) {
+      windowManager.repositionWaveformWindow(); // Position on active monitor
       waveformWindow.showInactive();
     }
 
@@ -1068,6 +1108,7 @@ async function handleHotkeyDown() {
     // Show waveform if setting allows
     const handsFreeSettings = AppSettingsService.getInstance().getSettings();
     if (handsFreeSettings.showWaveform !== false && waveformWindow && !waveformWindow.isDestroyed()) {
+      windowManager.repositionWaveformWindow(); // Position on active monitor
       waveformWindow.showInactive();
     }
     // 🔴 CRITICAL: Always cancel push-to-talk state first to reset waveform's isPushToTalk
@@ -1163,6 +1204,7 @@ async function handleHotkeyDown() {
     // Show waveform if setting allows
     const singleTapSettings = AppSettingsService.getInstance().getSettings();
     if (singleTapSettings.showWaveform !== false && waveformWindow && !waveformWindow.isDestroyed()) {
+      windowManager.repositionWaveformWindow(); // Position on active monitor
       waveformWindow.showInactive();
     }
     waveformWindow?.webContents.send('push-to-talk-start');

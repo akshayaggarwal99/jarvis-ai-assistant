@@ -103,7 +103,7 @@ const Settings: React.FC = () => {
   // Pre-defined hotkey options (single keys for push-to-talk)
   const presetHotkeys = [
     { key: 'fn', label: 'Function (fn)', description: 'Push-to-talk - behavior varies by keyboard/settings' },
-    { key: 'fn+ctrl', label: 'Fn + Control', description: 'Push-to-talk - hold both keys together' },
+    { key: 'cmd+shift+space', label: '⌘ + Shift + Space', description: 'Toggle recording - press to start, press again to stop' },
     { key: 'option', label: 'Option (⌥)', description: 'Push-to-talk - left or right side' },
     { key: 'control', label: 'Control (⌃)', description: 'Push-to-talk - bottom left corner' },
     { key: 'command', label: 'Command (⌘)', description: 'Push-to-talk - left or right Command key' },
