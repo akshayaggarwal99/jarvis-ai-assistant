@@ -162,7 +162,7 @@ class CopyAssetsPlugin {
       }
 
       // Copy high-res logo PNGs for menu bar icons
-      const logoFiles = ['jarvis-logo.png', 'jarvis-logo-dark.png', 'jarvis-logo-light.png'];
+      const logoFiles = ['jarvis-logo.png', 'jarvis-logo-dark.png', 'jarvis-logo-light.png', 'jarvis-menubar-template.png'];
       logoFiles.forEach(logoFile => {
         const logoSrc = path.join(__dirname, 'assets', logoFile);
         const logoDest = path.join(__dirname, 'dist', logoFile);

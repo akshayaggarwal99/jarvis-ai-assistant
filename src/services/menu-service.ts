@@ -290,29 +290,30 @@ export class MenuService {
   
   public updateTrayIcon(): void {
     const isDarkMode = nativeTheme.shouldUseDarkColors;
-    
+
     // 🔧 IMPROVED: Use template icon for automatic theme adaptation on macOS
     let iconPath: string;
     let useTemplate = false;
-    
+
     if (process.platform === 'darwin') {
       // On macOS, try to use a single template icon that adapts automatically
       const templateIconName = 'jarvis-menubar-template.png';
-      
+
       if (app.isPackaged) {
         iconPath = path.join(process.resourcesPath, templateIconName);
       } else {
-        iconPath = path.join(__dirname, '..', 'assets', templateIconName);
+        // In dev mode, icons are copied to dist/ directory (same as __dirname for webpack bundle)
+        iconPath = path.join(__dirname, templateIconName);
       }
-      
+
       // If template icon doesn't exist, fall back to theme-specific icons
       if (!fs.existsSync(iconPath)) {
         const iconName = isDarkMode ? 'jarvis-logo-light.png' : 'jarvis-logo-dark.png';
-        
+
         if (app.isPackaged) {
           iconPath = path.join(process.resourcesPath, iconName);
         } else {
-          iconPath = path.join(__dirname, '..', 'assets', iconName);
+          iconPath = path.join(__dirname, iconName);
         }
         Logger.debug(`🎨 [Tray] Using theme-specific icon: ${iconPath}`);
       } else {
@@ -322,22 +323,22 @@ export class MenuService {
     } else {
       // Non-macOS: use theme-specific icons
       const iconName = isDarkMode ? 'jarvis-logo-light.png' : 'jarvis-logo-dark.png';
-      
+
       if (app.isPackaged) {
         iconPath = path.join(process.resourcesPath, iconName);
       } else {
-        iconPath = path.join(__dirname, '..', 'assets', iconName);
+        iconPath = path.join(__dirname, iconName);
       }
       Logger.debug(`🎨 [Tray] Platform-specific icon: ${iconPath}`);
     }
-    
+
     // Fallback to default icon if theme-specific icon doesn't exist
     if (!fs.existsSync(iconPath)) {
       const fallbackIconName = 'jarvis-logo.png';
       if (app.isPackaged) {
         iconPath = path.join(process.resourcesPath, fallbackIconName);
       } else {
-        iconPath = path.join(__dirname, '..', 'assets', fallbackIconName);
+        iconPath = path.join(__dirname, fallbackIconName);
       }
       useTemplate = false;
       Logger.warning(`▲ [Tray] Theme icon not found, using fallback: ${iconPath}`);
