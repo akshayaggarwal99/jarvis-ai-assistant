@@ -173,9 +173,39 @@ export class WindowManager {
   }
 
   /**
+   * Get the best display for waveform positioning.
+   * Uses cursor position as primary (most reliable for multi-window apps),
+   * with frontmost window position as validation/fallback.
+   */
+  private getBestDisplayForWaveform(): Electron.Display {
+    const cursorPoint = screen.getCursorScreenPoint();
+    const cursorDisplay = screen.getDisplayNearestPoint(cursorPoint);
+    const frontWindowPos = this.getFrontmostWindowPosition();
+
+    if (frontWindowPos) {
+      const windowDisplay = screen.getDisplayNearestPoint(frontWindowPos);
+
+      // If cursor and window are on the same display, use that display
+      if (cursorDisplay.id === windowDisplay.id) {
+        Logger.info(`🖥️ [WindowManager] Cursor and window both on display ${cursorDisplay.id}`);
+        return cursorDisplay;
+      }
+
+      // If they differ, prefer cursor position - it's more likely where user is looking
+      // (Apps with multiple windows can have "first window" on wrong monitor)
+      Logger.info(`🖥️ [WindowManager] Cursor on display ${cursorDisplay.id}, window on ${windowDisplay.id} - using cursor`);
+      return cursorDisplay;
+    }
+
+    // No window position available, use cursor
+    Logger.info(`🖥️ [WindowManager] Using cursor display ${cursorDisplay.id} (no window pos)`);
+    return cursorDisplay;
+  }
+
+  /**
    * FAST reposition using last known frontmost display.
    * Call this BEFORE showing the window to avoid flash.
-   * On first trigger (no cached data), runs AppleScript synchronously to get correct display.
+   * On first trigger (no cached data), determines correct display.
    * Returns the display ID where window was positioned.
    */
   quickRepositionWaveformWindow(): number | null {
@@ -187,19 +217,16 @@ export class WindowManager {
     let activeDisplay: Electron.Display;
 
     if (this.lastFrontmostDisplayId !== null) {
-      // Fast path: use cached display from previous AppleScript tracking
+      // Fast path: use cached display from previous tracking
       const displays = screen.getAllDisplays();
       const lastDisplay = displays.find(d => d.id === this.lastFrontmostDisplayId);
       activeDisplay = lastDisplay || screen.getPrimaryDisplay();
+      Logger.info(`🖥️ [WindowManager] quickReposition using cached display: ${activeDisplay.id}`);
     } else {
-      // First trigger: run AppleScript synchronously to get correct display
-      const frontWindowPos = this.getFrontmostWindowPosition();
-      if (frontWindowPos) {
-        activeDisplay = screen.getDisplayNearestPoint(frontWindowPos);
-      } else {
-        activeDisplay = screen.getPrimaryDisplay();
-      }
+      // First trigger: determine best display using cursor + window heuristics
+      activeDisplay = this.getBestDisplayForWaveform();
       this.lastFrontmostDisplayId = activeDisplay.id;
+      Logger.info(`🖥️ [WindowManager] quickReposition first trigger, selected display: ${activeDisplay.id}`);
     }
 
     const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = activeDisplay.workArea;
@@ -229,21 +256,8 @@ export class WindowManager {
       return;
     }
 
-    // Try to get the frontmost app's window position (where paste will go)
-    const frontWindowPos = this.getFrontmostWindowPosition();
-    Logger.info(`🔄 [WindowManager] Frontmost window position: ${JSON.stringify(frontWindowPos)}`);
-
-    let activeDisplay: Electron.Display;
-    if (frontWindowPos) {
-      // Position based on frontmost application's window
-      activeDisplay = screen.getDisplayNearestPoint(frontWindowPos);
-      Logger.info(`🔄 [WindowManager] Using frontmost window display: ${activeDisplay.id}`);
-    } else {
-      // Fallback to cursor position
-      const cursorPoint = screen.getCursorScreenPoint();
-      activeDisplay = screen.getDisplayNearestPoint(cursorPoint);
-      Logger.info(`🔄 [WindowManager] Fallback to cursor display: ${activeDisplay.id}, cursor at: ${JSON.stringify(cursorPoint)}`);
-    }
+    // Use cursor-based display detection (more reliable for multi-window apps)
+    const activeDisplay = this.getBestDisplayForWaveform();
 
     const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = activeDisplay.workArea;
     Logger.info(`🔄 [WindowManager] Display workArea: x=${displayX}, y=${displayY}, w=${displayWidth}, h=${displayHeight}`);
@@ -281,8 +295,8 @@ export class WindowManager {
 
     Logger.info('🔄 [WindowManager] Starting waveform tracking (multi-monitor)');
 
-    // Check every 500ms for frontmost app changes (reduced from 100ms to save CPU)
-    // AppleScript process spawning is expensive, so we minimize frequency
+    // Check every 500ms for cursor/app changes
+    // Using cursor position is fast and more reliable than AppleScript for multi-window apps
     this.waveformTrackingInterval = setInterval(() => {
       const window = this.windows.get('waveform');
       if (!window || window.isDestroyed() || !window.isVisible()) {
@@ -290,16 +304,14 @@ export class WindowManager {
         return;
       }
 
-      // Get current frontmost window position
-      const frontWindowPos = this.getFrontmostWindowPosition();
-      if (!frontWindowPos) return;
-
-      // Get the display for the frontmost window
-      const activeDisplay = screen.getDisplayNearestPoint(frontWindowPos);
+      // Get display where cursor is (fast, no AppleScript needed)
+      const cursorPoint = screen.getCursorScreenPoint();
+      const cursorDisplay = screen.getDisplayNearestPoint(cursorPoint);
 
       // Only reposition if the display changed
-      if (activeDisplay.id !== this.lastFrontmostDisplayId) {
-        Logger.info(`🔄 [WindowManager] Frontmost app moved to different display: ${this.lastFrontmostDisplayId} → ${activeDisplay.id}`);
+      if (cursorDisplay.id !== this.lastFrontmostDisplayId) {
+        Logger.info(`🔄 [WindowManager] Cursor moved to different display: ${this.lastFrontmostDisplayId} → ${cursorDisplay.id}`);
+        this.lastFrontmostDisplayId = cursorDisplay.id;
         this.repositionWaveformWindow();
       }
     }, 500);
