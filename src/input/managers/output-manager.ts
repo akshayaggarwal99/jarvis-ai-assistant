@@ -48,10 +48,10 @@ export class OutputManager {
     } catch (error) {
       const outputTime = Date.now() - outputStartTime;
       const totalTime = Date.now() - keyReleaseTime;
-      
+
       Logger.error(`❌ [Output] Failed to output text after ${outputTime}ms:`, error);
       Logger.performance('❌ [TIMING] FAILED END-TO-END TIME: Key release → Output failed', totalTime);
-      
+
       // Track output failure
       this.analyticsManager.trackError('text_output_failed', {
         error: error instanceof Error ? error.message : String(error),
@@ -60,7 +60,7 @@ export class OutputManager {
         totalTime: totalTime,
         timestamp: new Date().toISOString()
       });
-      
+
       throw error;
     } finally {
       // Clear dictation mode after output attempt
@@ -130,7 +130,7 @@ export class OutputManager {
    */
   private async executeOutput(text: string, method: 'fast' | 'clipboard' | 'keystroke', modelUsed: string): Promise<void> {
     Logger.debug(`📋 [Output] Using ${method} method for text: "${text}"`);
-    
+
     switch (method) {
       case 'fast':
         await FastStreamingPaster.pasteFast(text);

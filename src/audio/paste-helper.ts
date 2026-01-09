@@ -586,6 +586,64 @@ export async function directTypeMethod(text: string): Promise<boolean> {
 }
 
 /**
+ * Check if there's a focused text input in the frontmost application.
+ * Uses accessibility APIs to detect text fields, text areas, combo boxes, etc.
+ * Returns true if a text input is focused and can accept paste.
+ */
+export async function hasFocusedTextInput(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const applescript = `
+      tell application "System Events"
+        try
+          set frontApp to first application process whose frontmost is true
+          set focusedElem to focused of frontApp
+          if focusedElem is missing value then
+            return "none"
+          end if
+          set elemRole to role of focusedElem
+          -- Check if it's a text-accepting element
+          if elemRole is "AXTextArea" or elemRole is "AXTextField" or elemRole is "AXComboBox" or elemRole is "AXSearchField" or elemRole is "AXTextView" then
+            return "text"
+          end if
+          -- Check for web content (browsers often use AXWebArea or AXGroup)
+          if elemRole is "AXWebArea" or elemRole is "AXGroup" then
+            return "text"
+          end if
+          return elemRole
+        on error errMsg
+          return "error"
+        end try
+      end tell
+    `;
+
+    const result = spawn('osascript', ['-e', applescript]);
+    let output = '';
+
+    result.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+
+    result.on('close', (code) => {
+      const trimmedOutput = output.trim();
+      if (code === 0 && (trimmedOutput === 'text' || trimmedOutput === 'AXWebArea' || trimmedOutput === 'AXGroup')) {
+        Logger.debug(`📝 [FocusCheck] Text input detected: ${trimmedOutput}`);
+        resolve(true);
+      } else {
+        Logger.debug(`📝 [FocusCheck] No text input focused: ${trimmedOutput}`);
+        resolve(false);
+      }
+    });
+
+    // Quick timeout - don't block too long
+    setTimeout(() => {
+      result.kill();
+      Logger.debug('📝 [FocusCheck] Timeout - assuming text input exists');
+      resolve(true); // Assume true on timeout to avoid blocking
+    }, 150);
+  });
+}
+
+/**
  * Ultra-fast paste method for simple text - no file I/O, minimal delays
  */
 export async function simpleFastPaste(text: string): Promise<boolean> {

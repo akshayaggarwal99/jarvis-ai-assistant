@@ -1,6 +1,7 @@
 import { BrowserWindow, screen, nativeTheme } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import { spawnSync } from 'child_process';
 import { Logger } from '../core/logger';
 import { AppSettingsService } from './app-settings-service';
 
@@ -9,7 +10,9 @@ export type WindowType = 'suggestion' | 'waveform' | 'dashboard' | 'analysisOver
 export class WindowManager {
   private static instance: WindowManager;
   private windows: Map<WindowType, BrowserWindow | null> = new Map();
-  
+  private waveformTrackingInterval: NodeJS.Timeout | null = null;
+  private lastFrontmostDisplayId: number | null = null;
+
   private constructor() {}
   
   static getInstance(): WindowManager {
@@ -117,16 +120,133 @@ export class WindowManager {
   }
 
   /**
-   * Reposition waveform window to bottom-right of active monitor
+   * Get the position of the frontmost application's window using AppleScript
+   * Returns the center point of the window, or null if unable to determine
+   */
+  private getFrontmostWindowPosition(): { x: number; y: number } | null {
+    try {
+      // AppleScript to get the frontmost app's window bounds
+      // Using explicit string concatenation to avoid list formatting issues
+      const script = `
+        tell application "System Events"
+          try
+            set frontApp to first application process whose frontmost is true
+            set frontWindow to first window of frontApp
+            set winPos to position of frontWindow
+            set winSize to size of frontWindow
+            set winX to item 1 of winPos
+            set winY to item 2 of winPos
+            set winW to item 1 of winSize
+            set winH to item 2 of winSize
+            return (winX as text) & "," & (winY as text) & "," & (winW as text) & "," & (winH as text)
+          on error
+            return "error"
+          end try
+        end tell`;
+
+      const result = spawnSync('osascript', ['-e', script], {
+        encoding: 'utf8',
+        timeout: 200,
+        maxBuffer: 1024 * 64,
+      });
+
+      Logger.info(`🔄 [WindowManager] AppleScript result: status=${result.status}, stdout="${result.stdout?.trim()}", stderr="${result.stderr?.trim()}"`);
+
+      if (result.status === 0 && result.stdout && result.stdout.trim() !== 'error') {
+        const parts = result.stdout.trim().split(',').map(s => parseInt(s.trim(), 10));
+        Logger.info(`🔄 [WindowManager] Parsed parts: ${JSON.stringify(parts)}`);
+        if (parts.length === 4 && parts.every(n => !isNaN(n))) {
+          const [winX, winY, winWidth, winHeight] = parts;
+          // Return the center of the window
+          const center = {
+            x: winX + Math.round(winWidth / 2),
+            y: winY + Math.round(winHeight / 2)
+          };
+          Logger.info(`🔄 [WindowManager] Frontmost window center: ${JSON.stringify(center)}`);
+          return center;
+        }
+      }
+    } catch (error) {
+      Logger.info(`🔄 [WindowManager] Failed to get frontmost window position: ${error}`);
+    }
+    return null;
+  }
+
+  /**
+   * FAST reposition using last known frontmost display.
+   * Call this BEFORE showing the window to avoid flash.
+   * On first trigger (no cached data), runs AppleScript synchronously to get correct display.
+   * Returns the display ID where window was positioned.
+   */
+  quickRepositionWaveformWindow(): number | null {
+    const window = this.windows.get('waveform');
+    if (!window || window.isDestroyed()) {
+      return null;
+    }
+
+    let activeDisplay: Electron.Display;
+
+    if (this.lastFrontmostDisplayId !== null) {
+      // Fast path: use cached display from previous AppleScript tracking
+      const displays = screen.getAllDisplays();
+      const lastDisplay = displays.find(d => d.id === this.lastFrontmostDisplayId);
+      activeDisplay = lastDisplay || screen.getPrimaryDisplay();
+    } else {
+      // First trigger: run AppleScript synchronously to get correct display
+      const frontWindowPos = this.getFrontmostWindowPosition();
+      if (frontWindowPos) {
+        activeDisplay = screen.getDisplayNearestPoint(frontWindowPos);
+      } else {
+        activeDisplay = screen.getPrimaryDisplay();
+      }
+      this.lastFrontmostDisplayId = activeDisplay.id;
+    }
+
+    const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = activeDisplay.workArea;
+
+    const windowWidth = 80;
+    const windowHeight = 50;
+    const margin = 20;
+
+    const x = displayX + displayWidth - windowWidth - margin;
+    const y = displayY + displayHeight - windowHeight - margin;
+
+    window.setPosition(x, y);
+
+    return activeDisplay.id;
+  }
+
+  /**
+   * Reposition waveform window to bottom-right of the screen containing the frontmost app
+   * Falls back to cursor position if frontmost window can't be determined
    */
   repositionWaveformWindow(): void {
-    const window = this.windows.get('waveform');
-    if (!window || window.isDestroyed()) return;
+    Logger.info('🔄 [WindowManager] repositionWaveformWindow called');
 
-    // Get the active display (where the cursor is)
-    const cursorPoint = screen.getCursorScreenPoint();
-    const activeDisplay = screen.getDisplayNearestPoint(cursorPoint);
+    const window = this.windows.get('waveform');
+    if (!window || window.isDestroyed()) {
+      Logger.info('🔄 [WindowManager] No waveform window to reposition');
+      return;
+    }
+
+    // Try to get the frontmost app's window position (where paste will go)
+    const frontWindowPos = this.getFrontmostWindowPosition();
+    Logger.info(`🔄 [WindowManager] Frontmost window position: ${JSON.stringify(frontWindowPos)}`);
+
+    let activeDisplay: Electron.Display;
+    if (frontWindowPos) {
+      // Position based on frontmost application's window
+      activeDisplay = screen.getDisplayNearestPoint(frontWindowPos);
+      Logger.info(`🔄 [WindowManager] Using frontmost window display: ${activeDisplay.id}`);
+    } else {
+      // Fallback to cursor position
+      const cursorPoint = screen.getCursorScreenPoint();
+      activeDisplay = screen.getDisplayNearestPoint(cursorPoint);
+      Logger.info(`🔄 [WindowManager] Fallback to cursor display: ${activeDisplay.id}, cursor at: ${JSON.stringify(cursorPoint)}`);
+    }
+
     const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = activeDisplay.workArea;
+    Logger.info(`🔄 [WindowManager] Display workArea: x=${displayX}, y=${displayY}, w=${displayWidth}, h=${displayHeight}`);
 
     // Window dimensions (sized to fit compact 48x32 bar with small padding)
     const windowWidth = 80;
@@ -137,9 +257,67 @@ export class WindowManager {
     const x = displayX + displayWidth - windowWidth - margin;
     const y = displayY + displayHeight - windowHeight - margin;
 
+    Logger.info(`🔄 [WindowManager] Setting waveform position to: x=${x}, y=${y}`);
     window.setPosition(x, y);
+
+    // Track which display we're on
+    this.lastFrontmostDisplayId = activeDisplay.id;
   }
-  
+
+  /**
+   * Start continuously tracking the frontmost app and repositioning waveform
+   * Called when waveform becomes visible
+   */
+  startWaveformTracking(): void {
+    // Don't start if already tracking
+    if (this.waveformTrackingInterval) return;
+
+    // Only track on multi-monitor setups - single monitor doesn't need tracking
+    const displays = screen.getAllDisplays();
+    if (displays.length <= 1) {
+      Logger.info('🔄 [WindowManager] Single monitor detected, skipping waveform tracking');
+      return;
+    }
+
+    Logger.info('🔄 [WindowManager] Starting waveform tracking (multi-monitor)');
+
+    // Check every 500ms for frontmost app changes (reduced from 100ms to save CPU)
+    // AppleScript process spawning is expensive, so we minimize frequency
+    this.waveformTrackingInterval = setInterval(() => {
+      const window = this.windows.get('waveform');
+      if (!window || window.isDestroyed() || !window.isVisible()) {
+        this.stopWaveformTracking();
+        return;
+      }
+
+      // Get current frontmost window position
+      const frontWindowPos = this.getFrontmostWindowPosition();
+      if (!frontWindowPos) return;
+
+      // Get the display for the frontmost window
+      const activeDisplay = screen.getDisplayNearestPoint(frontWindowPos);
+
+      // Only reposition if the display changed
+      if (activeDisplay.id !== this.lastFrontmostDisplayId) {
+        Logger.info(`🔄 [WindowManager] Frontmost app moved to different display: ${this.lastFrontmostDisplayId} → ${activeDisplay.id}`);
+        this.repositionWaveformWindow();
+      }
+    }, 500);
+  }
+
+  /**
+   * Stop tracking the frontmost app
+   * Called when waveform is hidden
+   */
+  stopWaveformTracking(): void {
+    if (this.waveformTrackingInterval) {
+      Logger.info('🔄 [WindowManager] Stopping waveform tracking');
+      clearInterval(this.waveformTrackingInterval);
+      this.waveformTrackingInterval = null;
+      this.lastFrontmostDisplayId = null;
+    }
+  }
+
   createDashboardWindow(): BrowserWindow {
     const existing = this.windows.get('dashboard');
     if (existing && !existing.isDestroyed()) {

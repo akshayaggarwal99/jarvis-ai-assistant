@@ -30,6 +30,7 @@ export class FastStreamingPaster {
     
     try {
       // Try native method first (fastest)
+      // Returns true on success, false if module unavailable (fall back), throws on paste failure
       const nativeSuccess = await this.tryNativePaste(smartText);
       if (nativeSuccess) {
         this.lastPasteTime = Date.now();
@@ -39,19 +40,21 @@ export class FastStreamingPaster {
         Logger.performance(`✅ [TIMING] ULTRA-FAST END-TO-END`, totalTime);
         return;
       }
-      
-      // Fallback to AppleScript
+
+      // Native returned false - module not available, fall back to AppleScript
+      // Note: AppleScript can't detect if paste actually worked, so we assume success
       await this.tryAppleScriptPaste(smartText);
       this.lastPasteTime = Date.now();
       this.lastPastedText = smartText;
       const totalTime = Date.now() - keyReleaseTime;
       Logger.performance(`⚡ [FAST-PASTE] AppleScript paste complete`, Date.now() - pasteStartTime);
       Logger.performance(`✅ [TIMING] FAST END-TO-END`, totalTime);
-      
     } catch (error) {
       Logger.error('⚡ [FAST-PASTE] All methods failed:', error);
       const totalTime = Date.now() - keyReleaseTime;
       Logger.performance(`❌ [TIMING] FAILED END-TO-END`, totalTime);
+      // Re-throw so caller knows paste failed
+      throw error;
     }
   }
   
@@ -129,6 +132,7 @@ export class FastStreamingPaster {
   
   /**
    * Try native paste method (fastest)
+   * Returns: true if paste succeeded, false if module not available, throws if paste failed
    */
   private static async tryNativePaste(text: string): Promise<boolean> {
     try {
@@ -136,19 +140,27 @@ export class FastStreamingPaster {
       try {
         typingMonitor = require('typing_monitor');
       } catch (error) {
-        return false;
+        return false; // Module not available, should fall back
       }
-      
-      if (typeof typingMonitor.fastPasteText === 'function') {
-        const success = typingMonitor.fastPasteText(text);
-        if (success) {
-          Logger.info(`⚡ [FAST-PASTE] Native method succeeded: "${text}"`);
-          return true;
-        }
+
+      if (typeof typingMonitor.fastPasteText !== 'function') {
+        return false; // Function not available, should fall back
       }
-      return false;
-    } catch (error) {
-      return false;
+
+      const success = typingMonitor.fastPasteText(text);
+      if (success) {
+        Logger.info(`⚡ [FAST-PASTE] Native method succeeded: "${text}"`);
+        return true;
+      }
+
+      // Native module available but paste failed - this means no text input focused
+      throw new Error('NO_TEXT_INPUT');
+    } catch (error: any) {
+      // Re-throw paste failure errors
+      if (error.message === 'NO_TEXT_INPUT') {
+        throw error;
+      }
+      return false; // Other errors mean we should try fallback
     }
   }
   

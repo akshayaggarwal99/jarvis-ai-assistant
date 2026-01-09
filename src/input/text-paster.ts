@@ -71,19 +71,33 @@ export class TextPaster {
     // Use fast paste method for speed optimization
     try {
       const pasteStartTime = Date.now();
-      await AudioProcessor.pasteText(smartText);
-      TextPaster.lastPasteTime = Date.now(); // Track successful paste
-      TextPaster.lastPastedText = smartText;
+      const pasteSuccess = await AudioProcessor.pasteText(smartText);
       const pasteTime = Date.now() - pasteStartTime;
       const keyReleaseTime = (global as any).keyReleaseTime || 0;
       const totalEndToEndTime = Date.now() - keyReleaseTime;
-      
-      Logger.performance('END-TO-END COMPLETE (pasted)', totalEndToEndTime);
-      Logger.performance('Paste operation', pasteTime);
-      Logger.info(`✅ [Paste] Successfully pasted in ${pasteTime}ms: "${smartText.substring(0, 50)}..."`);
-    } catch (pasteError) {
+
+      if (pasteSuccess) {
+        TextPaster.lastPasteTime = Date.now(); // Track successful paste
+        TextPaster.lastPastedText = smartText;
+        Logger.performance('END-TO-END COMPLETE (pasted)', totalEndToEndTime);
+        Logger.performance('Paste operation', pasteTime);
+        Logger.info(`✅ [Paste] Successfully pasted in ${pasteTime}ms: "${smartText.substring(0, 50)}..."`);
+      } else {
+        // Paste failed - no text input focused or other issue
+        Logger.warning(`🚫 [Paste] Paste returned false - no text input focused`);
+        // Copy to clipboard as backup
+        await this.copyToClipboard(smartText);
+        // Throw to signal failure to caller
+        throw new Error('NO_TEXT_INPUT');
+      }
+    } catch (pasteError: any) {
+      // Re-throw NO_TEXT_INPUT errors to signal paste failure
+      if (pasteError?.message === 'NO_TEXT_INPUT') {
+        throw pasteError;
+      }
+
       Logger.error('🚫 [Paste] Fast paste failed:', pasteError);
-      
+
       // Fallback to direct typing only if fast paste fails
       try {
         const typeStartTime = Date.now();
@@ -93,18 +107,21 @@ export class TextPaster {
         const typeTime = Date.now() - typeStartTime;
         const keyReleaseTime = (global as any).keyReleaseTime || 0;
         const totalEndToEndTime = Date.now() - keyReleaseTime;
-        
+
         Logger.performance('END-TO-END COMPLETE (typed)', totalEndToEndTime);
         Logger.performance('Type operation', typeTime);
         Logger.info(`✅ [Type] Fallback typing successful: "${smartText.substring(0, 50)}..."`);
       } catch (fallbackError) {
         Logger.error('🚫 [Type] All paste methods failed:', fallbackError);
-        
+
         // Show user notification for complete paste failure
         AudioProcessor.showFailureNotification('Failed to paste transcription - Text copied to clipboard as backup');
-        
+
         // Copy to clipboard as last resort
         await this.copyToClipboard(smartText);
+
+        // Re-throw to signal failure
+        throw fallbackError;
       }
     }
   }

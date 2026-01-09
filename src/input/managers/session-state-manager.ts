@@ -57,21 +57,23 @@ export class SessionStateManager {
 
   /**
    * Complete transcription for current session
+   * @param pasteSuccess - true if paste succeeded, false if failed (e.g., no text input focused)
    */
-  completeTranscription(): void {
+  completeTranscription(pasteSuccess: boolean = true): void {
     if (this.state.currentTranscriptionId) {
-      Logger.info(`✅ [Session] Completed transcription: ${this.state.currentTranscriptionId}`);
+      Logger.info(`✅ [Session] Completed transcription: ${this.state.currentTranscriptionId}, pasteSuccess: ${pasteSuccess}`);
       this.state.currentTranscriptionId = null;
     }
 
     this.state.isTranscribing = false;
-    this.events.onTranscriptionState?.(false);
+    this.events.onTranscriptionState?.(false, pasteSuccess);
   }
 
   /**
    * End the current session
+   * @param pasteSuccess - true if paste succeeded, false if failed (e.g., no text input focused)
    */
-  endSession(): void {
+  endSession(pasteSuccess: boolean = true): void {
     if (this.state.currentSessionId) {
       Logger.info(`🏁 [Session] Ended session: ${this.state.currentSessionId}`);
     }
@@ -79,8 +81,11 @@ export class SessionStateManager {
     this.state.isActive = false;
     this.state.currentSessionId = null;
     this.activeSession = null;
-    
-    this.completeTranscription();
+
+    // Only call completeTranscription if still transcribing (avoids duplicate callbacks)
+    if (this.state.isTranscribing) {
+      this.completeTranscription(pasteSuccess);
+    }
     this.events.onStateChange?.(false);
   }
 

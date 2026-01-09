@@ -15,21 +15,23 @@ export class PushToTalkService {
     onTranscriptionState?: (isTranscribing: boolean) => void,
     onPartialTranscript?: (partialText: string) => void,
     audioFeedback: boolean = true,
-    useStreamingTranscription: boolean = false
+    useStreamingTranscription: boolean = false,
+    onBeforeOutput?: () => void
   ) {
     this.analyticsManager = analyticsManager;
-    
+
     const options: PushToTalkOptions = {
       useStreamingTranscription,
       audioFeedback,
       onAudioLevel,
       onStateChange,
       onTranscriptionState,
-      onPartialTranscript
+      onPartialTranscript,
+      onBeforeOutput
     };
-    
+
     this.orchestrator = new PushToTalkOrchestrator(analyticsManager, options);
-    
+
     Logger.info('🎤 [PushToTalk] Service initialized with new architecture');
   }
 

@@ -77,63 +77,73 @@ export class AudioProcessor {
   /**
    * Auto-pastes text directly using AppleScript with enhanced reliability
    * Preserves formatting and user's clipboard
+   * Returns true if paste was successful, false if no text input was focused
    */
-  static async pasteText(text: string): Promise<void> {
+  static async pasteText(text: string): Promise<boolean> {
     try {
       console.log('🔧 [Paste] Starting paste operation...');
       console.log('🔧 [Paste] Text length:', text.length);
       console.log('🔧 [Paste] Text preview:', text.substring(0, 100));
-      
+
       // Check system permissions
       const hasPermission = await PasteHelper.checkSystemPermissions();
-      
+
       if (!hasPermission) {
         console.error('🚫 [Paste] System Events permission denied');
         PasteHelper.showFailureNotification('Permission denied - Enable Jarvis in System Preferences > Security & Privacy > Privacy > Accessibility');
-        return;
+        return false;
       }
-      
+
       // Validate text
       if (!text || text.trim().length === 0) {
         Logger.warning('Paste attempted with empty text');
-        return;
+        return false;
       }
-      
+
+      // Check if there's a focused text input before attempting paste
+      const hasTextInput = await PasteHelper.hasFocusedTextInput();
+      if (!hasTextInput) {
+        Logger.warning('🚫 [Paste] No text input focused - cannot paste');
+        return false;
+      }
+
       // Use fast paste method first - it's more reliable for atomic pasting
       let success = await PasteHelper.fastPasteMethod(text);
-      
+
       if (success) {
         Logger.success(`Auto-pasted via fast method: ${text.substring(0, 50)}...`);
-        return;
+        return true;
       }
-      
+
       // Check if we're in Notes app and try Notes-specific formatting
       const activeApp = await PasteHelper.getActiveApp();
       if (activeApp && activeApp.toLowerCase().includes('notes')) {
         Logger.info('📝 [Notes] Detected Notes app, using enhanced formatting');
         success = await PasteHelper.pasteToNotesApp(text);
-        
+
         if (success) {
           Logger.success(`Auto-pasted to Notes app: ${text.substring(0, 50)}...`);
-          return;
+          return true;
         }
       }
-      
+
       // Fallback to direct keystroke method
       success = await PasteHelper.pasteWithDirectKeystroke(text);
-      
+
       if (success) {
         Logger.success(`Auto-pasted with keystroke method: ${text.substring(0, 50)}...`);
-        return;
+        return true;
       }
-      
+
       // If both methods fail, show error
       Logger.error('🚫 [Paste] All paste methods failed');
       PasteHelper.showFailureNotification('Failed to paste text - Check app permissions');
-      
+      return false;
+
     } catch (error) {
       Logger.error('Failed to paste text:', error);
       PasteHelper.showFailureNotification('Paste error - Check app permissions');
+      return false;
     }
   }
 

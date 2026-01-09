@@ -14,24 +14,18 @@
             -webkit-app-region: no-drag;
         }
 
-        /* Universal dark theme colors for all system themes */
+        /* Vibrant solid colors - easy to spot on screen */
         :root {
-            --icon-bg: rgba(20, 20, 20, 0.95);
-            --icon-border: rgba(255, 255, 255, 0.2);
-            --icon-dots: rgba(255, 255, 255, 0.3);
-            --icon-dots-hover: rgba(255, 255, 255, 0.8);
-            --text-color: rgba(255, 255, 255, 0.9);
+            --idle-bg: rgba(139, 92, 246, 0.95);
+            --recording-bg: rgba(239, 68, 68, 0.95);
+            --transcribing-bg: rgba(6, 182, 212, 0.95);
+            --success-bg: rgba(16, 185, 129, 0.95);
+            --failure-bg: rgba(239, 68, 68, 0.95);
+            --icon-border: rgba(255, 255, 255, 0.3);
+            --icon-dots: rgba(255, 255, 255, 0.5);
+            --icon-dots-hover: rgba(255, 255, 255, 1);
+            --text-color: rgba(255, 255, 255, 1);
         }
-
-        /* @media (prefers-color-scheme: light) {
-            :root {
-                --icon-bg: rgba(255, 255, 255, 0.95);
-                --icon-border: rgba(0, 0, 0, 0.2);
-                --icon-dots: rgba(0, 0, 0, 0.3);
-                --icon-dots-hover: rgba(0, 0, 0, 0.8);
-                --text-color: rgba(0, 0, 0, 0.9);
-            }
-        } */
 
         .container {
             position: fixed;
@@ -47,22 +41,25 @@
             -webkit-app-region: no-drag;
         }
 
-        /* Simple bar at rest - compact size */
+        /* Simple bar at rest */
         .bar {
             width: 48px;
             height: 32px;
-            background: var(--icon-bg);
+            background: var(--idle-bg);
             border-radius: 16px;
             border: 1px solid var(--icon-border);
-            transition: all 0.3s ease;
-            backdrop-filter: blur(10px);
+            transition: opacity 0.3s ease, transform 0.3s ease;
             -webkit-app-region: drag;
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 3px;
             padding: 0;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .bar:hover {
+            transform: scale(1.05);
         }
 
         /* Dots inside the bar - hidden at rest */
@@ -103,7 +100,7 @@
             opacity: 1;
         }
 
-        /* Recording state - compact with pulsing indicator */
+        /* Recording state */
         .recording-bar {
             position: absolute;
             bottom: 0;
@@ -111,22 +108,22 @@
             transform: translateX(-50%);
             width: 48px;
             height: 32px;
-            background: var(--icon-bg);
+            background: var(--recording-bg);
             border-radius: 16px;
             border: 1px solid var(--icon-border);
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 6px;
-            backdrop-filter: blur(15px);
             -webkit-app-region: drag;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            transition: opacity 0.3s ease, transform 0.3s ease;
         }
 
         .stop-button {
             width: 10px;
             height: 10px;
-            background: #ff4757;
+            background: rgba(255, 255, 255, 0.9);
             border-radius: 2px;
             cursor: pointer;
             transition: all 0.2s ease;
@@ -135,8 +132,8 @@
         }
 
         .stop-button:hover {
-            background: #ff6b7a;
-            transform: scale(1.1);
+            background: rgba(255, 255, 255, 1);
+            transform: scale(1.2);
         }
 
         /* Recording indicator - pulsing dot */
@@ -159,7 +156,7 @@
             }
         }
 
-        /* Push-to-talk state (no stop button) - compact */
+        /* Push-to-talk state (no stop button) */
         .push-to-talk-bar {
             position: absolute;
             bottom: 0;
@@ -167,18 +164,18 @@
             transform: translateX(-50%);
             width: 48px;
             height: 32px;
-            background: var(--icon-bg);
+            background: var(--recording-bg);
             border-radius: 16px;
             border: 1px solid var(--icon-border);
             display: flex;
             align-items: center;
             justify-content: center;
-            backdrop-filter: blur(15px);
             -webkit-app-region: drag;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            transition: opacity 0.3s ease, transform 0.3s ease;
         }
 
-        /* Transcribing state - compact */
+        /* Transcribing state */
         .transcribing-bar {
             position: absolute;
             bottom: 0;
@@ -186,15 +183,15 @@
             transform: translateX(-50%);
             width: 48px;
             height: 32px;
-            background: var(--icon-bg);
+            background: var(--transcribing-bg);
             border-radius: 16px;
             border: 1px solid var(--icon-border);
             display: flex;
             align-items: center;
             justify-content: center;
-            backdrop-filter: blur(15px);
             -webkit-app-region: drag;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            transition: opacity 0.3s ease, transform 0.3s ease;
         }
 
         .loading-dots {
@@ -233,17 +230,16 @@
             transform: translateX(-50%);
             min-width: 140px;
             height: 32px;
-            background: rgba(255, 59, 48, 0.95); /* Red background */
+            background: rgba(255, 59, 48, 0.95);
             border-radius: 16px;
             border: 1px solid rgba(255, 59, 48, 0.3);
             display: flex;
             align-items: center;
             justify-content: center;
             padding: 0 15px;
-            backdrop-filter: blur(15px);
             -webkit-app-region: drag;
-            box-shadow: 0 4px 12px rgba(255, 59, 48, 0.3);
-            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            transition: opacity 0.3s ease, transform 0.3s ease;
         }
 
         .error-icon {
@@ -258,35 +254,16 @@
             white-space: nowrap;
         }
 
-        /* Hidden states */
-        .bar.hidden {
+        /* Hidden states - all use same transition */
+        .bar.hidden,
+        .recording-bar.hidden,
+        .push-to-talk-bar.hidden,
+        .transcribing-bar.hidden,
+        .network-error-bar.hidden,
+        .success-bar.hidden,
+        .failure-bar.hidden {
             opacity: 0;
-            transform: scale(0.8);
-        }
-
-        .recording-bar.hidden {
-            opacity: 0;
-            transform: scale(0.8);
-        }
-
-        .push-to-talk-bar.hidden {
-            opacity: 0;
-            transform: scale(0.8);
-        }
-
-        .push-to-talk-bar.hidden {
-            opacity: 0;
-            transform: scale(0.8);
-        }
-
-        .transcribing-bar.hidden {
-            opacity: 0;
-            transform: scale(0.8);
-        }
-
-        .network-error-bar.hidden {
-            opacity: 0;
-            transform: scale(0.8);
+            pointer-events: none;
         }
 
         /* Success state */
@@ -297,16 +274,15 @@
             transform: translateX(-50%);
             width: 48px;
             height: 32px;
-            background: var(--icon-bg);
+            background: var(--success-bg);
             border-radius: 16px;
             border: 1px solid var(--icon-border);
             display: flex;
             align-items: center;
             justify-content: center;
-            backdrop-filter: blur(15px);
             -webkit-app-region: drag;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            transition: opacity 0.3s ease, transform 0.3s ease;
         }
 
         .success-checkmark {
@@ -331,23 +307,59 @@
             }
         }
 
-        .success-bar.hidden {
-            opacity: 0;
-            transform: translateX(-50%) scale(0.8);
+        /* Failure state */
+        .failure-bar {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 48px;
+            height: 32px;
+            background: var(--failure-bg);
+            border-radius: 16px;
+            border: 1px solid var(--icon-border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            -webkit-app-region: drag;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+
+        .failure-x {
+            width: 16px;
+            height: 16px;
+            stroke: var(--icon-dots-hover);
+            stroke-width: 2.5;
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .failure-x path {
+            stroke-dasharray: 20;
+            stroke-dashoffset: 20;
+            animation: xDraw 0.35s ease-out forwards;
+        }
+
+        @keyframes xDraw {
+            to {
+                stroke-dashoffset: 0;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container" id="container">
         <div class="hover-text">Click to dictate</div>
-        
+
         <!-- Simple bar at rest state -->
         <div class="bar" id="bar">
             <div class="rest-dot"></div>
             <div class="rest-dot"></div>
             <div class="rest-dot"></div>
         </div>
-        
+
         <!-- Manual recording state (with stop button) -->
         <div class="recording-bar hidden" id="recordingBar">
             <div class="stop-button" id="stopButton"></div>
@@ -380,12 +392,19 @@
                 <path d="M4 9.5L7.5 13L14 5"/>
             </svg>
         </div>
+
+        <!-- Failure state -->
+        <div class="failure-bar hidden" id="failureBar">
+            <svg class="failure-x" viewBox="0 0 16 16">
+                <path d="M4 4L12 12"/>
+                <path d="M12 4L4 12"/>
+            </svg>
+        </div>
     </div>
 
     <script>
-        // Sentry disabled in open-source build
         const { ipcRenderer } = require('electron');
-        
+
         const container = document.getElementById('container');
         const bar = document.getElementById('bar');
         const recordingBar = document.getElementById('recordingBar');
@@ -395,14 +414,15 @@
         const networkErrorBar = document.getElementById('networkErrorBar');
         const errorMessage = document.getElementById('errorMessage');
         const successBar = document.getElementById('successBar');
+        const failureBar = document.getElementById('failureBar');
 
         let isRecording = false;
         let isPushToTalk = false;
         let isTranscribing = false;
         let wasCancelled = false;
-        let audioFeedbackEnabled = true; // Track audio feedback setting
-        
-        // ⚡ PRE-CREATED AUDIO CONTEXT for instant sound - no creation delay
+        let audioFeedbackEnabled = true;
+        let successHideTimeout = null; // Track timeout so we can cancel it
+
         let sharedAudioContext = null;
         try {
             sharedAudioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -410,12 +430,9 @@
             console.error('Failed to create AudioContext:', error);
         }
 
-        // Sound effects
         function playStartSound() {
-            console.log('🔊 [Waveform] playStartSound called, audioFeedbackEnabled:', audioFeedbackEnabled);
-            if (!audioFeedbackEnabled) return; // Respect audio feedback setting
-            
-            // ⚡ INSTANT AUDIO - Create or reuse audio context
+            if (!audioFeedbackEnabled) return;
+
             if (!sharedAudioContext) {
                 try {
                     sharedAudioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -424,84 +441,103 @@
                     return;
                 }
             }
-            
-            // ⚡ INSTANT AUDIO - Resume context if suspended and use shared context
+
             if (sharedAudioContext.state === 'suspended') {
                 sharedAudioContext.resume();
             }
-            
-            // Create a "buduppp" start sound with rising tones (very low volume)
+
             const audioContext = sharedAudioContext;
-            
-            // First tone - low "bu"
+
             const osc1 = audioContext.createOscillator();
             const gain1 = audioContext.createGain();
             osc1.connect(gain1);
             gain1.connect(audioContext.destination);
             osc1.frequency.setValueAtTime(350, audioContext.currentTime);
-            gain1.gain.setValueAtTime(0.01, audioContext.currentTime); // Reduced from 0.03 to 0.01 (extremely low)
+            gain1.gain.setValueAtTime(0.01, audioContext.currentTime);
             gain1.gain.exponentialRampToValueAtTime(0.005, audioContext.currentTime + 0.08);
             osc1.start(audioContext.currentTime);
             osc1.stop(audioContext.currentTime + 0.08);
 
-            // Second tone - mid "du"
             const osc2 = audioContext.createOscillator();
             const gain2 = audioContext.createGain();
             osc2.connect(gain2);
             gain2.connect(audioContext.destination);
             osc2.frequency.setValueAtTime(500, audioContext.currentTime + 0.05);
-            gain2.gain.setValueAtTime(0.008, audioContext.currentTime + 0.05); // Reduced from 0.025 to 0.008
+            gain2.gain.setValueAtTime(0.008, audioContext.currentTime + 0.05);
             gain2.gain.exponentialRampToValueAtTime(0.005, audioContext.currentTime + 0.13);
             osc2.start(audioContext.currentTime + 0.05);
             osc2.stop(audioContext.currentTime + 0.13);
 
-            // Third tone - high "ppp"
             const osc3 = audioContext.createOscillator();
             const gain3 = audioContext.createGain();
             osc3.connect(gain3);
             gain3.connect(audioContext.destination);
             osc3.frequency.setValueAtTime(750, audioContext.currentTime + 0.1);
-            gain3.gain.setValueAtTime(0.006, audioContext.currentTime + 0.1); // Reduced from 0.02 to 0.006
+            gain3.gain.setValueAtTime(0.006, audioContext.currentTime + 0.1);
             gain3.gain.exponentialRampToValueAtTime(0.005, audioContext.currentTime + 0.2);
             osc3.start(audioContext.currentTime + 0.1);
             osc3.stop(audioContext.currentTime + 0.2);
         }
 
         function playStopSound() {
-            console.log('🔊 [Waveform] playStopSound called, audioFeedbackEnabled:', audioFeedbackEnabled);
-            if (!audioFeedbackEnabled || !sharedAudioContext) return; // Respect audio feedback setting
-            // Create a downward "poop" stop sound (very low volume)
+            if (!audioFeedbackEnabled || !sharedAudioContext) return;
             const audioContext = sharedAudioContext;
-            
-            // First tone - high "po"
+
             const osc1 = audioContext.createOscillator();
             const gain1 = audioContext.createGain();
             osc1.connect(gain1);
             gain1.connect(audioContext.destination);
             osc1.frequency.setValueAtTime(600, audioContext.currentTime);
             osc1.frequency.exponentialRampToValueAtTime(400, audioContext.currentTime + 0.1);
-            gain1.gain.setValueAtTime(0.008, audioContext.currentTime); // Reduced from 0.025 to 0.008
+            gain1.gain.setValueAtTime(0.008, audioContext.currentTime);
             gain1.gain.exponentialRampToValueAtTime(0.005, audioContext.currentTime + 0.15);
             osc1.start(audioContext.currentTime);
             osc1.stop(audioContext.currentTime + 0.15);
 
-            // Second tone - low "op"
             const osc2 = audioContext.createOscillator();
             const gain2 = audioContext.createGain();
             osc2.connect(gain2);
             gain2.connect(audioContext.destination);
             osc2.frequency.setValueAtTime(350, audioContext.currentTime + 0.08);
             osc2.frequency.exponentialRampToValueAtTime(250, audioContext.currentTime + 0.2);
-            gain2.gain.setValueAtTime(0.006, audioContext.currentTime + 0.08); // Reduced from 0.02 to 0.006
+            gain2.gain.setValueAtTime(0.006, audioContext.currentTime + 0.08);
             gain2.gain.exponentialRampToValueAtTime(0.005, audioContext.currentTime + 0.25);
             osc2.start(audioContext.currentTime + 0.08);
             osc2.stop(audioContext.currentTime + 0.25);
         }
 
+        function playCancelSound() {
+            if (!audioFeedbackEnabled || !sharedAudioContext) return;
+            const audioContext = sharedAudioContext;
+
+            // Quick descending "boop-boop" to indicate cancellation
+            const osc1 = audioContext.createOscillator();
+            const gain1 = audioContext.createGain();
+            osc1.connect(gain1);
+            gain1.connect(audioContext.destination);
+            osc1.frequency.setValueAtTime(400, audioContext.currentTime);
+            osc1.frequency.exponentialRampToValueAtTime(200, audioContext.currentTime + 0.08);
+            gain1.gain.setValueAtTime(0.012, audioContext.currentTime);
+            gain1.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.1);
+            osc1.start(audioContext.currentTime);
+            osc1.stop(audioContext.currentTime + 0.1);
+
+            const osc2 = audioContext.createOscillator();
+            const gain2 = audioContext.createGain();
+            osc2.connect(gain2);
+            gain2.connect(audioContext.destination);
+            osc2.frequency.setValueAtTime(300, audioContext.currentTime + 0.1);
+            osc2.frequency.exponentialRampToValueAtTime(150, audioContext.currentTime + 0.18);
+            gain2.gain.setValueAtTime(0.01, audioContext.currentTime + 0.1);
+            gain2.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.2);
+            osc2.start(audioContext.currentTime + 0.1);
+            osc2.stop(audioContext.currentTime + 0.2);
+        }
+
         function startRecording() {
             if (isRecording || isPushToTalk) return;
             isRecording = true;
-            wasCancelled = false; // Reset cancel flag for new operation
+            wasCancelled = false;
 
             playStartSound();
 
@@ -517,8 +553,8 @@
 
             playStopSound();
 
-            recordingBar.classList.add('hidden');
-            bar.classList.remove('hidden');
+            // DON'T hide the recording bar here - let showTranscribing() do it atomically
+            // This prevents flash between recording and transcribing states
 
             ipcRenderer.send('stop-dictation-manual');
         }
@@ -526,17 +562,27 @@
         function startPushToTalk() {
             if (isRecording || isPushToTalk) return;
 
-            // ⚡ INSTANT AUDIO FEEDBACK FIRST - Play sound before ANY other processing
+            // Clear any pending timeout from previous operation
+            if (successHideTimeout) {
+                clearTimeout(successHideTimeout);
+                successHideTimeout = null;
+            }
+
             playStartSound();
 
             isPushToTalk = true;
-            wasCancelled = false; // Reset cancel flag for new operation
+            wasCancelled = false;
+            isTranscribing = false;
 
-            // ⚡ IMMEDIATE VISUAL FEEDBACK
+            // Hide all other bars, show recording bar
             bar.classList.add('hidden');
+            recordingBar.classList.add('hidden');
+            transcribingBar.classList.add('hidden');
+            successBar.classList.add('hidden');
+            failureBar.classList.add('hidden');
+            networkErrorBar.classList.add('hidden');
             pushToTalkBar.classList.remove('hidden');
 
-            // ⚡ Start recording in background - don't wait for response
             ipcRenderer.send('start-push-to-talk-recording');
         }
 
@@ -544,34 +590,38 @@
             if (!isPushToTalk) return;
             isPushToTalk = false;
 
-            // ⚡ IMMEDIATE VISUAL FEEDBACK
-            pushToTalkBar.classList.add('hidden');
-            bar.classList.remove('hidden');
+            // DON'T hide the recording bar here - let showTranscribing() do it atomically
+            // This prevents flash between recording (red) and transcribing (blue) states
+            // The recording bar stays visible until transcribing bar replaces it
 
-            // Play the original synthesized stop sound
             playStopSound();
-
-            // Recording stop is handled by main process, no need to send another stop event
         }
 
         function cancelPushToTalk() {
-            console.log('🚫 [Waveform] Cancelling push-to-talk operation');
             wasCancelled = true;
-
-            // Reset both recording states
             isRecording = false;
             isPushToTalk = false;
+            isTranscribing = false;
 
-            // Reset visual state to idle
+            // Clear any pending success hide timeout
+            if (successHideTimeout) {
+                clearTimeout(successHideTimeout);
+                successHideTimeout = null;
+            }
+
+            playCancelSound();
+
+            // Hide all bars - don't show idle bar since window will be hidden
+            // This prevents purple flash when starting next recording
+            bar.classList.add('hidden');
+            recordingBar.classList.add('hidden');
             pushToTalkBar.classList.add('hidden');
             transcribingBar.classList.add('hidden');
             successBar.classList.add('hidden');
-            bar.classList.remove('hidden');
-
-            console.log('✅ [Waveform] Push-to-talk cancelled - UI reset to idle state');
+            failureBar.classList.add('hidden');
+            networkErrorBar.classList.add('hidden');
         }
 
-        // Click handlers
         container.addEventListener('click', (e) => {
             if (e.target === stopButton) {
                 stopRecording();
@@ -580,7 +630,6 @@
             }
         });
 
-        // Listen for push-to-talk events (Fn key hold)
         ipcRenderer.on('push-to-talk-start', () => {
             startPushToTalk();
         });
@@ -590,11 +639,9 @@
         });
 
         ipcRenderer.on('push-to-talk-cancel', () => {
-            console.log('🚫 [Waveform] Push-to-talk cancelled - resetting to idle state');
             cancelPushToTalk();
         });
 
-        // Listen for manual dictation events (double-tap or click)
         ipcRenderer.on('dictation-start', () => {
             startRecording();
         });
@@ -603,44 +650,32 @@
             stopRecording();
         });
 
-        // Listen for transcription events
         ipcRenderer.on('transcription-start', () => {
             showTranscribing();
         });
 
-        ipcRenderer.on('transcription-complete', () => {
-            hideTranscribing();
+        ipcRenderer.on('transcription-complete', (event, pasteSuccess = true) => {
+            hideTranscribing(pasteSuccess);
         });
 
-        // Listen for audio feedback setting changes
         ipcRenderer.on('audio-feedback-setting', (event, enabled) => {
-            console.log('🔊 [Waveform] Received audio feedback setting:', enabled);
             audioFeedbackEnabled = enabled;
         });
 
-        // Listen for network error events
         ipcRenderer.on('show-network-error', (event, message) => {
-            console.log('🌐 [Waveform] Showing network error:', message);
             showNetworkError(message);
         });
 
-        // Listen for play-stop-sound command from main.ts
         ipcRenderer.on('play-stop-sound', () => {
-            console.log('🔊 [Waveform] Stop sound is now played in main process for minimal latency');
             // Sound is played directly in main process now
         });
 
-        // ⚡ INSTANT MICROPHONE STATUS - Listen for immediate recording status updates
         ipcRenderer.on('recording-status', (event, status) => {
-            console.log('🎤 [Waveform] Instant recording status update:', status);
-            
             if (status.recording && status.active) {
-                // ⚡ IMMEDIATE VISUAL RESPONSE - Recording started
                 if (!isPushToTalk && !isRecording) {
                     startPushToTalk();
                 }
             } else if (!status.recording && !status.active) {
-                // ⚡ IMMEDIATE VISUAL RESPONSE - Recording stopped
                 if (isPushToTalk || isRecording) {
                     stopPushToTalk();
                 }
@@ -648,18 +683,16 @@
         });
 
         function showNetworkError(message) {
-            // Hide other states
             bar.classList.add('hidden');
             recordingBar.classList.add('hidden');
             pushToTalkBar.classList.add('hidden');
             transcribingBar.classList.add('hidden');
             successBar.classList.add('hidden');
-            
-            // Update message and show error bar
+            failureBar.classList.add('hidden');
+
             errorMessage.textContent = message;
             networkErrorBar.classList.remove('hidden');
-            
-            // Auto-hide after 3 seconds
+
             setTimeout(() => {
                 hideNetworkError();
             }, 3000);
@@ -667,51 +700,70 @@
 
         function hideNetworkError() {
             networkErrorBar.classList.add('hidden');
-            
-            // Show default bar
             bar.classList.remove('hidden');
         }
 
         function showTranscribing() {
             isTranscribing = true;
 
-            // Hide other states
+            // Hide all other states, show transcribing
             bar.classList.add('hidden');
             recordingBar.classList.add('hidden');
             pushToTalkBar.classList.add('hidden');
             networkErrorBar.classList.add('hidden');
             successBar.classList.add('hidden');
-
-            // Show transcribing
+            failureBar.classList.add('hidden');
             transcribingBar.classList.remove('hidden');
         }
 
-        function hideTranscribing() {
+        function hideTranscribing(pasteSuccess = true) {
             isTranscribing = false;
+
+            // If cancelled, don't show anything - window will be hidden
+            if (wasCancelled) {
+                transcribingBar.classList.add('hidden');
+                wasCancelled = false;
+                return;
+            }
 
             // Hide transcribing bar
             transcribingBar.classList.add('hidden');
 
-            // Only show success checkmark if not cancelled
-            if (!wasCancelled) {
-                showSuccess();
-            }
-            wasCancelled = false; // Reset for next operation
-        }
+            if (pasteSuccess) {
+                // Reset checkmark animation
+                const checkmarkPath = successBar.querySelector('path');
+                checkmarkPath.style.animation = 'none';
+                checkmarkPath.offsetHeight;
+                checkmarkPath.style.animation = '';
 
-        function showSuccess() {
-            // Reset the checkmark animation by removing and re-adding the element
-            const checkmarkPath = successBar.querySelector('path');
-            checkmarkPath.style.animation = 'none';
-            checkmarkPath.offsetHeight; // Trigger reflow
-            checkmarkPath.style.animation = '';
+                // Show success bar
+                failureBar.classList.add('hidden');
+                successBar.classList.remove('hidden');
+            } else {
+                // Reset X animation
+                const xPaths = failureBar.querySelectorAll('path');
+                xPaths.forEach(path => {
+                    path.style.animation = 'none';
+                    path.offsetHeight;
+                    path.style.animation = '';
+                });
 
-            // Show success bar
-            successBar.classList.remove('hidden');
-
-            // Hide after animation completes (350ms draw + 850ms hold)
-            setTimeout(() => {
+                // Show failure bar
                 successBar.classList.add('hidden');
+                failureBar.classList.remove('hidden');
+            }
+
+            // Clear any existing timeout before setting a new one
+            if (successHideTimeout) {
+                clearTimeout(successHideTimeout);
+            }
+
+            // Auto-hide success/failure after delay (window will be hidden by main process)
+            successHideTimeout = setTimeout(() => {
+                successHideTimeout = null;
+                successBar.classList.add('hidden');
+                failureBar.classList.add('hidden');
+                // Don't show idle bar - window will be hidden
             }, 1200);
         }
     </script>

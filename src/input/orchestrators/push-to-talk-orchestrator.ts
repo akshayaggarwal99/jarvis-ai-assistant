@@ -26,10 +26,12 @@ export class PushToTalkOrchestrator {
   private feedbackService = UserFeedbackService.getInstance();
   private options: PushToTalkOptions;
   private _isHandsFreeMode: boolean = false;
+  private onBeforeOutput?: () => void;
 
   constructor(analyticsManager: OptimizedAnalyticsManager, options: PushToTalkOptions = {}) {
     this.analyticsManager = analyticsManager;
     this.options = options;
+    this.onBeforeOutput = options.onBeforeOutput;
 
     // Initialize managers
     this.stateManager = new SessionStateManager({
@@ -72,14 +74,14 @@ export class PushToTalkOrchestrator {
       return;
     }
 
-    // Clean up any lingering streaming sessions before starting new one
-    try {
-      await this.transcriptionManager.cleanup();
-    } catch (error) {
-      Logger.warning('⚠️ [Orchestrator] Cleanup before start failed:', error);
-    }
-
     Logger.info('🎬 [Orchestrator] Starting push-to-talk session');
+
+    // Clean up any lingering streaming sessions in background - don't block audio start
+    setImmediate(() => {
+      this.transcriptionManager.cleanup().catch(error => {
+        Logger.warning('⚠️ [Orchestrator] Background cleanup failed:', error);
+      });
+    });
 
     try {
       // Start new session
@@ -191,8 +193,18 @@ export class PushToTalkOrchestrator {
     if (streamingText && streamingText.trim().length > 0) {
       Logger.info('⚡ [Orchestrator] Using accumulated streaming text for ultra-fast processing');
 
-      await this.outputManager.outputTextUltraFast(streamingText.trim(), 'deepgram-streaming-immediate');
-      this.stateManager.endSession();
+      // Reposition UI before output (e.g., move waveform to frontmost app's screen)
+      Logger.info('🔄 [Orchestrator] Calling onBeforeOutput callback (ultra-fast)');
+      this.onBeforeOutput?.();
+
+      let pasteSuccess = true;
+      try {
+        await this.outputManager.outputTextUltraFast(streamingText.trim(), 'deepgram-streaming-immediate');
+      } catch (outputError) {
+        Logger.warning('⚠️ [Orchestrator] Ultra-fast paste failed:', outputError);
+        pasteSuccess = false;
+      }
+      this.stateManager.endSession(pasteSuccess);
 
       // Cleanup audio resources after ultra-fast output
       try {
@@ -257,13 +269,22 @@ export class PushToTalkOrchestrator {
     if (commandResult.skipRemainingProcessing) {
       Logger.info(`🎯 [Orchestrator] ${commandResult.processingType} command handled, ending session`);
 
+      let pasteSuccess = true;
       // For assistant commands, output the response text if any was generated
       if (commandResult.processingType === 'assistant' && commandResult.text && commandResult.text.trim().length > 0) {
         Logger.info(`📝 [Orchestrator] Outputting assistant response: "${commandResult.text.substring(0, 50)}..."`);
-        await this.outputManager.outputText(commandResult.text, transcriptionResult.model);
+        // Reposition UI before output (e.g., move waveform to frontmost app's screen)
+        Logger.info('🔄 [Orchestrator] Calling onBeforeOutput callback (assistant)');
+        this.onBeforeOutput?.();
+        try {
+          await this.outputManager.outputText(commandResult.text, transcriptionResult.model);
+        } catch (outputError) {
+          Logger.warning('⚠️ [Orchestrator] Assistant paste failed:', outputError);
+          pasteSuccess = false;
+        }
       }
 
-      this.stateManager.endSession();
+      this.stateManager.endSession(pasteSuccess);
 
       // Cleanup audio resources after assistant command
       try {
@@ -289,15 +310,23 @@ export class PushToTalkOrchestrator {
       return;
     }
 
-    this.stateManager.completeTranscription();
+    // Reposition UI before output (e.g., move waveform to frontmost app's screen)
+    Logger.info('🔄 [Orchestrator] Calling onBeforeOutput callback (dictation)');
+    this.onBeforeOutput?.();
 
-    await this.outputManager.outputText(processedText, transcriptionResult.model);
+    let pasteSuccess = true;
+    try {
+      await this.outputManager.outputText(processedText, transcriptionResult.model);
+    } catch (outputError) {
+      Logger.warning('⚠️ [Orchestrator] Dictation paste failed:', outputError);
+      pasteSuccess = false;
+    }
 
     // Save analytics BEFORE ending session (needs session data)
     this.saveAnalytics(processedText, transcriptionResult.model, commandResult.isAssistantCommand);
 
     // End session and start monitoring
-    this.stateManager.endSession();
+    this.stateManager.endSession(pasteSuccess);
 
     // Cleanup audio resources after session ends
     try {
@@ -407,32 +436,16 @@ export class PushToTalkOrchestrator {
     const sessionId = this.stateManager.getCurrentSessionId();
     const session = this.stateManager.getActiveSession();
 
-    console.log('📊 [DEBUG] saveAnalytics called:', {
-      sessionId,
-      hasSession: !!session,
-      textLength: text.length,
-      modelUsed,
-      isAssistantCommand
-    });
-
     if (sessionId && session && text) {
       const mode = isAssistantCommand ? 'command' : 'dictation';
 
       setImmediate(async () => {
         try {
-          console.log('📊 [DEBUG] About to call analyticsManager.endSession');
           await this.analyticsManager.endSession(text, session.duration, modelUsed, mode);
           Logger.debug(`📊 [Orchestrator] Analytics saved for session: ${sessionId}`);
         } catch (error) {
           Logger.error(`📊 [Orchestrator] Analytics save failed for session: ${sessionId}:`, error);
-          console.error('📊 [DEBUG] Analytics error:', error);
         }
-      });
-    } else {
-      console.log('📊 [DEBUG] saveAnalytics skipped - missing data:', {
-        hasSessionId: !!sessionId,
-        hasSession: !!session,
-        hasText: !!text
       });
     }
   }

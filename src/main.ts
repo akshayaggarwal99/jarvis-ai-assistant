@@ -96,6 +96,66 @@ const getDashboardWindow = () => dashboardWindow || windowManager.getWindow('das
 const getSuggestionWindow = () => suggestionWindow || windowManager.getWindow('suggestion');
 const getAnalysisOverlayWindow = () => analysisOverlayWindow || windowManager.getWindow('analysisOverlay');
 
+// ESC cancel shortcut management - allows user to cancel during recording/transcribing
+function registerEscCancelShortcut(): void {
+  if (isEscCancelShortcutRegistered) return;
+
+  try {
+    const registered = globalShortcut.register('Escape', () => {
+      Logger.info('🚫 [Cancel] ESC key pressed - cancelling current operation');
+
+      // Clear any pending hide timeout first
+      clearWaveformHideTimeout();
+
+      if (pushToTalkService) {
+        try {
+          pushToTalkService.hardStop();
+        } catch (error) {
+          Logger.error('❌ [Cancel] Error during hardStop:', error);
+        }
+      }
+
+      const waveformWindow = windowManager.getWindow('waveform');
+      waveformWindow?.webContents.send('push-to-talk-cancel');
+
+      // Unregister first, then stop tracking and hide
+      unregisterEscCancelShortcut();
+      windowManager.stopWaveformTracking();
+      waveformWindow?.hide();
+
+      Logger.info('✅ [Cancel] Operation cancelled via ESC key');
+    });
+
+    if (registered) {
+      isEscCancelShortcutRegistered = true;
+      Logger.debug('⌨️ [Shortcut] ESC cancel shortcut registered');
+    } else {
+      Logger.warning('⚠️ [Shortcut] Failed to register ESC cancel shortcut');
+    }
+  } catch (error) {
+    Logger.error('❌ [Shortcut] Error registering ESC cancel shortcut:', error);
+  }
+}
+
+function unregisterEscCancelShortcut(): void {
+  if (!isEscCancelShortcutRegistered) return;
+
+  try {
+    globalShortcut.unregister('Escape');
+    isEscCancelShortcutRegistered = false;
+    Logger.debug('⌨️ [Shortcut] ESC cancel shortcut unregistered');
+  } catch (error) {
+    Logger.error('❌ [Shortcut] Error unregistering ESC cancel shortcut:', error);
+  }
+}
+
+function clearWaveformHideTimeout(): void {
+  if (waveformHideTimeout) {
+    clearTimeout(waveformHideTimeout);
+    waveformHideTimeout = null;
+  }
+}
+
 // tray is now managed by MenuService
 let contextDetector = new ContextDetector();
 let transcripts: Array<{ id: number; text: string; timestamp: string; suggestion?: string }> = [];
@@ -110,6 +170,8 @@ let isEmailTutorialMode = false; // Track if we're in email tutorial mode
 let analyticsManager = new OptimizedAnalyticsManager();
 let updateService = new UpdateService();
 let userNudgeService: UserNudgeService | null = null;
+let isEscCancelShortcutRegistered = false;
+let waveformHideTimeout: NodeJS.Timeout | null = null; // Track timeout so we can cancel it
 let privacyConsentService = PrivacyConsentService.getInstance();
 let isHotkeyMonitoringActive = false;
 let lastActiveHotkey: string | null = null;
@@ -462,6 +524,30 @@ ipcMain.on('close-app', () => {
   app.quit();
 });
 
+// Cancel current operation (ESC key from waveform window)
+ipcMain.on('cancel-current-operation', () => {
+  Logger.info('🚫 [Cancel] ESC key pressed - cancelling current operation');
+
+  if (pushToTalkService) {
+    try {
+      pushToTalkService.hardStop();
+    } catch (error) {
+      Logger.error('❌ [Cancel] Error during hardStop:', error);
+    }
+  }
+
+  const waveformWindow = windowManager.getWindow('waveform');
+  waveformWindow?.webContents.send('push-to-talk-cancel');
+
+  // Stop tracking and hide waveform
+  clearWaveformHideTimeout();
+  unregisterEscCancelShortcut();
+  windowManager.stopWaveformTracking();
+  waveformWindow?.hide();
+
+  Logger.info('✅ [Cancel] Operation cancelled via ESC key');
+});
+
 // Note: Analytics and Dictionary IPC handlers have been moved to IPCHandlers class
 // to avoid duplicate handlers and ensure centralized management
 
@@ -574,6 +660,8 @@ async function deactivateOverlaysAndShortcuts() {
     // Hide overlay windows if they exist
     if (waveformWindow && !waveformWindow.isDestroyed()) {
       Logger.info('♫ [Overlays] Hiding waveform window...');
+      unregisterEscCancelShortcut();
+      windowManager.stopWaveformTracking();
       waveformWindow.hide();
     }
 
@@ -747,7 +835,7 @@ function startHotkeyMonitoring() {
         }
       });
     },
-    (isTranscribing) => {
+    (isTranscribing, pasteSuccess = true) => {
       // Send transcription state to all windows
       BrowserWindow.getAllWindows().forEach(window => {
         if (!window.isDestroyed()) {
@@ -757,12 +845,23 @@ function startHotkeyMonitoring() {
 
       // Legacy events for waveform
       if (isTranscribing) {
+        // Reposition waveform to frontmost app's screen when transcription starts
+        // This is when the user releases the key - they may have clicked a different window
+        windowManager.repositionWaveformWindow();
         waveformWindow?.webContents.send('transcription-start');
       } else {
-        waveformWindow?.webContents.send('transcription-complete');
-        // Hide waveform window after success checkmark displays
-        setTimeout(() => {
+        // Send transcription-complete with paste success status
+        waveformWindow?.webContents.send('transcription-complete', pasteSuccess);
+        // Hide waveform window after success/failure indicator displays
+        // Clear any existing timeout first
+        if (waveformHideTimeout) {
+          clearTimeout(waveformHideTimeout);
+        }
+        waveformHideTimeout = setTimeout(() => {
+          waveformHideTimeout = null;
           if (waveformWindow && !waveformWindow.isDestroyed()) {
+            unregisterEscCancelShortcut();
+            windowManager.stopWaveformTracking();
             waveformWindow.hide();
           }
         }, 1200);
@@ -773,7 +872,11 @@ function startHotkeyMonitoring() {
       waveformWindow?.webContents.send('partial-transcript', partialText);
     },
     allSettings.audioFeedback,
-    shouldUseStreaming // Use the pre-calculated value
+    shouldUseStreaming, // Use the pre-calculated value
+    () => {
+      // Reposition waveform to frontmost app's screen before paste
+      windowManager.repositionWaveformWindow();
+    }
   );
 
   // Set up DictationIPCHandlers with pushToTalkService and callbacks
@@ -980,14 +1083,21 @@ async function handleHotkeyDown() {
   const shouldShowWaveform = currentAppSettings.showWaveform !== false;
 
   if (waveformWindow && !waveformWindow.isDestroyed()) {
+    // Send state change FIRST so waveform shows recording bar before window becomes visible
+    // This prevents empty window flash after cancel
+    waveformWindow.webContents.send('push-to-talk-start');
+
     // Only show waveform if setting allows it
     if (shouldShowWaveform) {
-      windowManager.repositionWaveformWindow(); // Position on active monitor
-      waveformWindow.showInactive();
+      clearWaveformHideTimeout(); // Clear any pending hide from previous operation
+      windowManager.quickRepositionWaveformWindow(); // Position FIRST using cursor (instant)
+      waveformWindow.showInactive(); // Show at correct position
+      registerEscCancelShortcut(); // Allow ESC to cancel
+      // Start AppleScript tracking for multi-monitor refinement
+      setImmediate(() => {
+        windowManager.startWaveformTracking();
+      });
     }
-
-    // Send to waveform window first (primary UI) - even if hidden, for audio feedback
-    waveformWindow.webContents.send('push-to-talk-start');
 
     // ⚡ INSTANT MICROPHONE STATUS - Send recording status immediately
     waveformWindow.webContents.send('recording-status', { recording: true, active: true });
@@ -1083,6 +1193,8 @@ async function handleHotkeyDown() {
       waveformWindow?.webContents.send('transcription-complete');
       // Hide waveform window when operation is cancelled
       if (waveformWindow && !waveformWindow.isDestroyed()) {
+        unregisterEscCancelShortcut();
+        windowManager.stopWaveformTracking();
         waveformWindow.hide();
       }
 
@@ -1105,16 +1217,23 @@ async function handleHotkeyDown() {
       (pushToTalkService as any).isHandsFreeMode = true;
     }
 
+    // 🔴 CRITICAL: Always cancel push-to-talk state first to reset waveform's isPushToTalk
+    waveformWindow?.webContents.send('push-to-talk-cancel');
+    // Send dictation-start BEFORE showing window to prevent empty window flash
+    waveformWindow?.webContents.send('dictation-start');
+
     // Show waveform if setting allows
     const handsFreeSettings = AppSettingsService.getInstance().getSettings();
     if (handsFreeSettings.showWaveform !== false && waveformWindow && !waveformWindow.isDestroyed()) {
-      windowManager.repositionWaveformWindow(); // Position on active monitor
-      waveformWindow.showInactive();
+      clearWaveformHideTimeout(); // Clear any pending hide from previous operation
+      windowManager.quickRepositionWaveformWindow(); // Position FIRST using cursor (instant)
+      waveformWindow.showInactive(); // Show at correct position
+      registerEscCancelShortcut(); // Allow ESC to cancel
+      // Start AppleScript tracking for multi-monitor refinement
+      setImmediate(() => {
+        windowManager.startWaveformTracking();
+      });
     }
-    // 🔴 CRITICAL: Always cancel push-to-talk state first to reset waveform's isPushToTalk
-    waveformWindow?.webContents.send('push-to-talk-cancel');
-    // Now send dictation-start to show the recording bar with stop button
-    waveformWindow?.webContents.send('dictation-start');
     lastFnKeyTime = 0; // Reset to prevent triple-tap issues
 
     // ⚡ HANDS-FREE MODE: Start recording immediately for hands-free dictation
@@ -1201,13 +1320,21 @@ async function handleHotkeyDown() {
     const beforeUITime = performance.now();
     Logger.debug(`⚡ [TIMING] Before UI feedback: ${(beforeUITime - keyDownStartTime).toFixed(2)}ms`);
 
+    // Send state change FIRST so waveform shows recording bar before window becomes visible
+    waveformWindow?.webContents.send('push-to-talk-start');
+
     // Show waveform if setting allows
     const singleTapSettings = AppSettingsService.getInstance().getSettings();
     if (singleTapSettings.showWaveform !== false && waveformWindow && !waveformWindow.isDestroyed()) {
-      windowManager.repositionWaveformWindow(); // Position on active monitor
-      waveformWindow.showInactive();
+      clearWaveformHideTimeout(); // Clear any pending hide from previous operation
+      windowManager.quickRepositionWaveformWindow(); // Position FIRST using cursor (instant)
+      waveformWindow.showInactive(); // Show at correct position
+      registerEscCancelShortcut(); // Allow ESC to cancel
+      // Start AppleScript tracking for multi-monitor refinement
+      setImmediate(() => {
+        windowManager.startWaveformTracking();
+      });
     }
-    waveformWindow?.webContents.send('push-to-talk-start');
 
     const afterUITime = performance.now();
     Logger.debug(`⚡ [TIMING] After UI feedback: ${(afterUITime - keyDownStartTime).toFixed(2)}ms (UI took ${(afterUITime - beforeUITime).toFixed(2)}ms)`);
@@ -1247,6 +1374,8 @@ async function handleHotkeyDown() {
       waveformWindow?.webContents.send('transcription-complete');
       // Hide waveform window when operation is cancelled
       if (waveformWindow && !waveformWindow.isDestroyed()) {
+        unregisterEscCancelShortcut();
+        windowManager.stopWaveformTracking();
         waveformWindow.hide();
       }
       Logger.info('🛑 [Stop] Hard stop requested - cancelling all operations');

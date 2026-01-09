@@ -5,8 +5,9 @@ export interface PushToTalkOptions {
   audioFeedback?: boolean;
   onAudioLevel?: (level: number) => void;
   onStateChange?: (isActive: boolean) => void;
-  onTranscriptionState?: (isTranscribing: boolean) => void;
+  onTranscriptionState?: (isTranscribing: boolean, pasteSuccess?: boolean) => void;
   onPartialTranscript?: (partialText: string) => void;
+  onBeforeOutput?: () => void;
 }
 
 export interface TranscriptionSession {
@@ -81,7 +82,7 @@ export interface SessionState {
 export interface PushToTalkEvents {
   onAudioLevel?: (level: number) => void;
   onStateChange?: (isActive: boolean) => void;
-  onTranscriptionState?: (isTranscribing: boolean) => void;
+  onTranscriptionState?: (isTranscribing: boolean, pasteSuccess?: boolean) => void;
   onPartialTranscript?: (partialText: string) => void;
 }
 
