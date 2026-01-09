@@ -191,10 +191,9 @@ export class WindowManager {
         return cursorDisplay;
       }
 
-      // If they differ, prefer cursor position - it's more likely where user is looking
-      // (Apps with multiple windows can have "first window" on wrong monitor)
-      Logger.info(`🖥️ [WindowManager] Cursor on display ${cursorDisplay.id}, window on ${windowDisplay.id} - using cursor`);
-      return cursorDisplay;
+      // If they differ, prefer window position - user wants waveform near their active window
+      Logger.info(`🖥️ [WindowManager] Cursor on display ${cursorDisplay.id}, window on ${windowDisplay.id} - using window`);
+      return windowDisplay;
     }
 
     // No window position available, use cursor
@@ -295,8 +294,7 @@ export class WindowManager {
 
     Logger.info('🔄 [WindowManager] Starting waveform tracking (multi-monitor)');
 
-    // Check every 500ms for cursor/app changes
-    // Using cursor position is fast and more reliable than AppleScript for multi-window apps
+    // Check every 500ms for active window changes
     this.waveformTrackingInterval = setInterval(() => {
       const window = this.windows.get('waveform');
       if (!window || window.isDestroyed() || !window.isVisible()) {
@@ -304,14 +302,16 @@ export class WindowManager {
         return;
       }
 
-      // Get display where cursor is (fast, no AppleScript needed)
-      const cursorPoint = screen.getCursorScreenPoint();
-      const cursorDisplay = screen.getDisplayNearestPoint(cursorPoint);
+      // Get display where frontmost window is
+      const frontWindowPos = this.getFrontmostWindowPosition();
+      if (!frontWindowPos) return;
+
+      const windowDisplay = screen.getDisplayNearestPoint(frontWindowPos);
 
       // Only reposition if the display changed
-      if (cursorDisplay.id !== this.lastFrontmostDisplayId) {
-        Logger.info(`🔄 [WindowManager] Cursor moved to different display: ${this.lastFrontmostDisplayId} → ${cursorDisplay.id}`);
-        this.lastFrontmostDisplayId = cursorDisplay.id;
+      if (windowDisplay.id !== this.lastFrontmostDisplayId) {
+        Logger.info(`🔄 [WindowManager] Active window moved to different display: ${this.lastFrontmostDisplayId} → ${windowDisplay.id}`);
+        this.lastFrontmostDisplayId = windowDisplay.id;
         this.repositionWaveformWindow();
       }
     }, 500);
