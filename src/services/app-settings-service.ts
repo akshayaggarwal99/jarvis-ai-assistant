@@ -29,6 +29,8 @@ interface AppSettings {
   useOllama?: boolean;
   ollamaUrl?: string;
   ollamaModel?: string;
+  // Audio Device Settings
+  preferredMicrophone?: string; // Device ID of preferred microphone (null = system default)
   // Custom Prompts
   customDictationPrompt?: string;
   customEmailPrompt?: string;
