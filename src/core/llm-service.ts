@@ -22,7 +22,7 @@ export class CloudLLMService {
     geminiKey: string,
     anthropicKey?: string,
     useOllama: boolean = false,
-    ollamaUrl: string = 'http://localhost:11434',
+    ollamaUrl: string = 'http://127.0.0.1:11434',
     ollamaModel: string = 'llama3'
   ) {
     this.openaiKey = openaiKey;
@@ -279,7 +279,14 @@ SUGGESTION:`;
   }
 
   private async streamOllama(prompt: string, callbacks: StreamingLLMResponse): Promise<void> {
-    const url = `${this.ollamaUrl}/api/chat`; // Correct endpoint for chat
+    // Normalize localhost to 127.0.0.1 to avoid IPv6 resolution issues
+    const normalizedUrl = this.ollamaUrl.replace('localhost', '127.0.0.1');
+    const url = `${normalizedUrl}/api/chat`; // Correct endpoint for chat
+
+    // System prompt to match cloud model response style
+    const systemPrompt = `You are Jarvis, a helpful AI assistant. Be concise and direct. 
+Do NOT add preamble like "Here is..." or postamble like "Would you like me to...".
+Just provide the requested content directly without any meta-commentary.`;
 
     const response = await fetch(url, {
       method: 'POST',
@@ -288,7 +295,10 @@ SUGGESTION:`;
       },
       body: JSON.stringify({
         model: this.ollamaModel,
-        messages: [{ role: 'user', content: prompt }],
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: prompt }
+        ],
         stream: true
       })
     });

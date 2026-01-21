@@ -24,7 +24,7 @@ export class JarvisCore {
     geminiKey: string,
     anthropicKey?: string,
     useOllama: boolean = false,
-    ollamaUrl: string = 'http://localhost:11434',
+    ollamaUrl: string = 'http://127.0.0.1:11434',
     ollamaModel: string = 'llama3'
   ) {
     this.mcpClient = new MCPClient();

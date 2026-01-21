@@ -16,11 +16,11 @@ export class FastAudioRecorder {
       this.isRecording = true;
       this.recordingStartTime = Date.now();
       this.audioChunks = [];
-      
+
       Logger.debug('Starting audio recording...');
-      
+
       await this.startRecording(onAudioLevel);
-      
+
       Logger.debug('Audio recording started successfully');
     } catch (error) {
       Logger.error('Failed to start audio recording:', error);
@@ -38,7 +38,7 @@ export class FastAudioRecorder {
           '/usr/local/bin/ffmpeg',
           'ffmpeg'
         ];
-        
+
         let ffmpegPath = 'ffmpeg';
         for (const testPath of ffmpegPaths) {
           try {
@@ -55,19 +55,24 @@ export class FastAudioRecorder {
         Logger.debug(`Using ffmpeg at: ${ffmpegPath}`);
 
         // Stream directly to memory - much faster!
-        this.recordingProcess = spawn(ffmpegPath, [
+        const args = [
           '-f', 'avfoundation',
-          '-i', ':0',  // Default audio input
+          '-i', ':0',  // Default audio input - TODO: autodetect via 'ffmpeg -list_devices true -f avfoundation -i ""'
           '-ar', '16000',
           '-ac', '1',
           '-f', 'wav',
-          '-loglevel', 'error',
-          'pipe:1'  // Stream to stdout instead of file
-        ]);
+          '-loglevel', 'info', // Increased log level temporarily to debug issues
+          'pipe:1'
+        ];
+
+        Logger.debug(`🎤 [FastAudio] Spawning FFmpeg with args: ${args.join(' ')}`);
+        this.recordingProcess = spawn(ffmpegPath, args);
+
+        const stderrChunks: string[] = [];
 
         this.recordingProcess.stdout.on('data', (data: Buffer) => {
           this.audioChunks.push(data);
-          
+
           if (onAudioLevel) {
             const level = this.calculateAudioLevel(data);
             onAudioLevel(level);
@@ -76,34 +81,47 @@ export class FastAudioRecorder {
 
         this.recordingProcess.stderr.on('data', (data: Buffer) => {
           const output = data.toString();
-          Logger.debug('FFmpeg stderr:', output);
+          stderrChunks.push(output);
+          // Only log critical errors to avoid spam, but keep for debugging
+          if (output.toLowerCase().includes('error') || output.toLowerCase().includes('fail')) {
+            Logger.warning(`⚠️ [FastAudio] FFmpeg stderr: ${output.trim()}`);
+          }
         });
 
         this.recordingProcess.on('error', (err: Error) => {
-          Logger.error('Recording process error:', err);
+          Logger.error('❌ [FastAudio] Recording process error:', err);
           this.isRecording = false;
           reject(err);
         });
 
         this.recordingProcess.on('spawn', () => {
-          Logger.debug('Recording process spawned successfully');
-          resolve();
+          Logger.debug('✅ [FastAudio] Recording process spawned successfully');
         });
 
         this.recordingProcess.on('exit', (code: number) => {
-          Logger.debug(`FFmpeg process exited with code: ${code}`);
+          if (code !== 0 && code !== null && this.isRecording) {
+            const errorOutput = stderrChunks.join('\n');
+            Logger.error(`❌ [FastAudio] FFmpeg exited with code ${code}. Stderr: ${errorOutput}`);
+            this.isRecording = false;
+          }
         });
 
-        // Timeout to ensure process starts
+        // Timeout to ensure initial data flow
         setTimeout(() => {
           if (this.recordingProcess && !this.recordingProcess.killed) {
-            Logger.debug('Recording process confirmed running');
-            resolve();
+            if (this.audioChunks.length > 0) {
+              Logger.debug('✅ [FastAudio] Recording confirmed active (data flowing)');
+              resolve();
+            } else {
+              Logger.warning('⚠️ [FastAudio] Process running but no audio chunks received yet');
+              // Don't reject yet, give it a bit more time or let it fail gracefully later
+              resolve();
+            }
           } else {
-            Logger.error('Recording process failed to start within timeout');
+            Logger.error('❌ [FastAudio] Recording process failed to start within timeout');
             reject(new Error('Recording process failed to start'));
           }
-        }, 1500);
+        }, 2000);
 
       } catch (error) {
         Logger.error('Error in startRecording:', error);
@@ -128,10 +146,10 @@ export class FastAudioRecorder {
       const totalSize = this.audioChunks.reduce((sum, chunk) => sum + chunk.length, 0);
       const audioBuffer = Buffer.concat(this.audioChunks, totalSize);
       this.audioChunks = [];
-      
+
       const duration = Date.now() - this.recordingStartTime;
       Logger.debug(`Audio captured: ${audioBuffer.length} bytes (${duration}ms)`);
-      
+
       return audioBuffer;
     } catch (error) {
       Logger.error('Error stopping recording:', error);

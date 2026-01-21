@@ -17,61 +17,68 @@ export class CommandProcessor {
   /**
    * Process transcribed text to determine command type and handle accordingly
    */
-  async processCommand(text: string, appContext: AppContext, modelUsed: string): Promise<ProcessingResult> {
-    Logger.info(`🔄 [Command] Processing text: "${text}"`);
+  async processCommand(text: string, appContext: AppContext, modelUsed: string, isAssistantHint: boolean = false): Promise<ProcessingResult> {
+    Logger.info(`🔄 [Command] Processing text: "${text}" (Hint: ${isAssistantHint})`);
 
-    // 1. Check for Jarvis commands first
-    try {
-      const jarvisCommand = JarvisCommandProcessor.parseVoiceCommand(text);
-      
-      if (jarvisCommand.isJarvisCommand) {
-        Logger.info(`🎯 [Command] Detected Jarvis command - Screenshot: ${jarvisCommand.needsScreenshot}`);
-        
-        const jarvisOutput = await JarvisCommandProcessor.processJarvisCommand(jarvisCommand);
-        
-        // Track Jarvis command usage
-        this.analyticsManager.trackEvent('jarvis_command_processed', {
-          commandType: jarvisOutput.type,
-          isScreenshot: jarvisCommand.needsScreenshot,
-          textLength: text.length,
-          model: modelUsed,
-          timestamp: new Date().toISOString()
-        });
-        
-        return {
-          text: text,
-          isAssistantCommand: false,
-          processingType: 'jarvis',
-          skipRemainingProcessing: true
-        };
-      }
-    } catch (error) {
-      Logger.error('❌ [Command] Jarvis command processing failed, falling back to normal processing:', error);
-    }
+    // 1. Check for Jarvis commands first (unless forced assistant)
+    if (!isAssistantHint) {
+      try {
+        const jarvisCommand = JarvisCommandProcessor.parseVoiceCommand(text);
 
-    // 2. Check for app launching commands
-    try {
-      const appCommandPatterns = /\b(open|launch|start|go to|navigate to|visit)\b/i;
-      if (appCommandPatterns.test(text)) {
-        Logger.info(`🚀 [Command] Detected app command: "${text}"`);
-        
-        const appLaunchResult = await this.processAppCommand(text, modelUsed);
-        if (appLaunchResult.skipRemainingProcessing) {
-          return appLaunchResult;
+        if (jarvisCommand.isJarvisCommand) {
+          Logger.info(`🎯 [Command] Detected Jarvis command - Screenshot: ${jarvisCommand.needsScreenshot}`);
+
+          const jarvisOutput = await JarvisCommandProcessor.processJarvisCommand(jarvisCommand);
+
+          // Track Jarvis command usage
+          this.analyticsManager.trackEvent('jarvis_command_processed', {
+            commandType: jarvisOutput.type,
+            isScreenshot: jarvisCommand.needsScreenshot,
+            textLength: text.length,
+            model: modelUsed,
+            timestamp: new Date().toISOString()
+          });
+
+          return {
+            text: text,
+            isAssistantCommand: false,
+            processingType: 'jarvis',
+            skipRemainingProcessing: true
+          };
         }
+      } catch (error) {
+        Logger.error('❌ [Command] Jarvis command processing failed, falling back to normal processing:', error);
       }
-    } catch (error) {
-      Logger.error('❌ [Command] App command processing failed, falling back to normal processing:', error);
     }
 
-    // 3. Check for assistant commands
+    // 2. Check for app launching commands (unless forced assistant)
+    if (!isAssistantHint) {
+      try {
+        const appCommandPatterns = /\b(open|launch|start|go to|navigate to|visit)\b/i;
+        if (appCommandPatterns.test(text)) {
+          Logger.info(`🚀 [Command] Detected app command: "${text}"`);
+
+          const appLaunchResult = await this.processAppCommand(text, modelUsed);
+          if (appLaunchResult.skipRemainingProcessing) {
+            return appLaunchResult;
+          }
+        }
+      } catch (error) {
+        Logger.error('❌ [Command] App command processing failed, falling back to normal processing:', error);
+      }
+    }
+
+    // 3. Check for assistant commands (or force if hint provided)
     try {
-      Logger.debug(`🤖 [Command] Checking for assistant command: "${text}"`);
-      const processedResult = await this.assistantProcessor.processWithAssistantDetection(text, appContext);
-      
+      Logger.debug(`🤖 [Command] Checking for assistant command: "${text}" (Forced: ${isAssistantHint})`);
+      console.log(`[DEBUG_STDOUT] CommandProcessor: text="${text}", isAssistantHint=${isAssistantHint}`);
+      const processedResult = await this.assistantProcessor.processWithAssistantDetection(text, appContext, isAssistantHint);
+
+      console.log(`[DEBUG_STDOUT] AssistantProcessor result: isAssistant=${processedResult.isAssistant}, text="${processedResult.text}"`);
+
       if (processedResult.isAssistant) {
         Logger.info(`🤖 [Command] Assistant command processed successfully`);
-        
+
         // Track assistant command
         this.analyticsManager.trackEvent('assistant_command_detected', {
           originalText: text,
@@ -79,7 +86,7 @@ export class CommandProcessor {
           model: modelUsed,
           timestamp: new Date().toISOString()
         });
-        
+
         return {
           text: processedResult.text,
           isAssistantCommand: true,
@@ -109,16 +116,16 @@ export class CommandProcessor {
       // Import command parser dynamically
       const { CloudCommandParserService } = await import('../../services/cloud-command-parser');
       const parsedIntent = await CloudCommandParserService.parseCommand(text);
-      
+
       if (parsedIntent && parsedIntent.confidence > 0.7) {
         Logger.success('✅ [Command] Parsed app intent:', parsedIntent);
-        
+
         // Import app launcher
         const { AppLauncherService } = await import('../../services/app-launcher-service');
         const appLauncher = new AppLauncherService();
-        
+
         let success = false;
-        
+
         // Convert CloudCommandParser result to AppLauncher format and execute
         if (parsedIntent.action === 'search' && parsedIntent.platform === 'youtube' && parsedIntent.query) {
           const intent = {
@@ -153,10 +160,10 @@ export class CommandProcessor {
             success = await appLauncher.executeIntent(intent);
           }
         }
-        
+
         if (success) {
           Logger.success(`🚀 [Command] Successfully launched: ${parsedIntent.platform}`);
-          
+
           // Track successful app launch
           this.analyticsManager.trackEvent('app_command_executed', {
             action: parsedIntent.action,
@@ -166,7 +173,7 @@ export class CommandProcessor {
             model: modelUsed,
             timestamp: new Date().toISOString()
           });
-          
+
           return {
             text: text,
             isAssistantCommand: false,

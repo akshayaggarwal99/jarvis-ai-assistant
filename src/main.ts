@@ -224,7 +224,11 @@ async function initializeJarvis() {
 
     // Initialize persistent agent for better performance and live agent experience
     try {
-      await agentManager.initialize(openaiKey, geminiKey);
+      await agentManager.initialize(openaiKey, geminiKey, {
+        useOllama: settings.useOllama,
+        ollamaUrl: settings.ollamaUrl,
+        ollamaModel: settings.ollamaModel
+      });
       Logger.success('★ Jarvis Agent initialized and ready for live interactions');
     } catch (error) {
       Logger.warning('▲ Failed to initialize Jarvis Agent - will fallback to on-demand creation:', error);

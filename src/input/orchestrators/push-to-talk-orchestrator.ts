@@ -250,7 +250,8 @@ export class PushToTalkOrchestrator {
     const commandResult = await this.commandProcessor.processCommand(
       transcriptionResult.text,
       appContext,
-      transcriptionResult.model
+      transcriptionResult.model,
+      transcriptionResult.isAssistant
     );
 
     // If command processing handles everything, we're done
