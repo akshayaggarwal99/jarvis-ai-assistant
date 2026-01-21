@@ -8,7 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onStatsUpdate: (callback: (stats: any) => void) => {
     console.log('📊 [Preload] Setting up onStatsUpdate listener');
     const listener = (_event: any, stats: any) => {
-      console.log('📊 [Preload] Received stats-update event:', stats);
+      console.debug('📊 [Preload] Received stats-update event:', stats); // Moved to console.debug to reduce spam
       callback(stats);
     };
     ipcRenderer.on('stats-update', listener);

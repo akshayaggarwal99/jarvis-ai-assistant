@@ -23,6 +23,7 @@ export interface TranscriptionResult {
   model: string;
   confidence?: number;
   isAssistantCommand?: boolean;
+  isAssistant?: boolean;
   preComputedAssistant?: {
     text: string;
     isAssistant: boolean;

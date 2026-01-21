@@ -105,6 +105,16 @@ Jarvis now supports running any LLM locally via Ollama. It's fast, private, and 
     - Settings → AI Models → Enable **Use Ollama**
     - Select your model from the dropdown (Jarvis auto-detects them!)
 
+### ⚡ Performance Note
+
+Running models locally depends heavily on your hardware.
+- **Enabled AI Post-Processing:** Adds ~1-3s latency on typical M1/M2 chips.
+- **Disabled AI Post-Processing:** Instant transcription.
+- **High-End Hardware:** M1/M2/M3 Max/Ultra chips are nearly instant.
+
+**For Lightning Fast Performance:**
+If speed is critical, use **Deepgram + Gemini** (Cloud) or **Local Whisper + Gemini Flash**, which are significantly faster than local LLMs on standard hardware.
+
 ---
 
 ## Keyboard shortcuts

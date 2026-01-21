@@ -21,20 +21,49 @@ import { systemInfoTool } from "../tools/system-info-tool";
  * Tier 2: Manual Tool Routing (1-3s) - 8% of single tool operations  
  * Tier 3: Full Agent (3-5s) - 2% of complex multi-step workflows
  */
+import { CloudLLMService } from "../core/llm-service";
+
+/**
+ * Tiered Jarvis Agent for optimal performance
+ * 
+ * Tier 1: Direct API (0.5-1s) - 90% of simple text queries
+ * Tier 2: Manual Tool Routing (1-3s) - 8% of single tool operations  
+ * Tier 3: Full Agent (3-5s) - 2% of complex multi-step workflows
+ */
 export class TieredJarvisAgent {
-  private openaiKey: string;
+  private openaiKey: string | null = null;
   private geminiKey: string | null = null;
+  private ollamaSettings: { useOllama: boolean; ollamaUrl: string; ollamaModel: string } | null = null;
   private fullAgent: any;
+  private llmService: CloudLLMService;
   private checkpointSaver = new MemorySaver();
 
-  constructor(openaiKey: string, geminiKey?: string) {
-    this.openaiKey = openaiKey;
+  constructor(
+    openaiKey: string | undefined,
+    geminiKey?: string,
+    ollamaSettings?: { useOllama: boolean; ollamaUrl: string; ollamaModel: string }
+  ) {
+    this.openaiKey = openaiKey || null;
     this.geminiKey = geminiKey || null;
-    this.initializeFullAgent();
+    this.ollamaSettings = ollamaSettings || null;
+
+    // Initialize provider-agnostic LLM service for Tier 1
+    this.llmService = new CloudLLMService(
+      openaiKey || '',
+      geminiKey || '',
+      '', // anthropic
+      ollamaSettings?.useOllama || false,
+      ollamaSettings?.ollamaUrl,
+      ollamaSettings?.ollamaModel
+    );
+
+    if (this.openaiKey) {
+      this.initializeFullAgent();
+    }
   }
 
   private initializeFullAgent(): void {
-    const llm = new ChatOpenAI({ 
+    const llm = new ChatOpenAI({
       apiKey: this.openaiKey,
       model: "gpt-4o-mini",
       temperature: 0.3,
@@ -60,27 +89,27 @@ export class TieredJarvisAgent {
   }
 
   async processQuery(
-    query: string, 
-    sessionId: string, 
+    query: string,
+    sessionId: string,
     userContext?: { userId?: string, displayName?: string, email?: string }
   ): Promise<string> {
     const startTime = Date.now();
     const cleanQuery = query.replace(/\s+/g, ' ').trim();
-    
+
     Logger.info(`🎯 [TieredAgent] Processing query: "${cleanQuery}"`);
-    
+
     // TIER 1: Direct API for simple text generation (90% of cases)
     if (this.isSimpleTextQuery(cleanQuery)) {
       Logger.info(`⚡ [Tier1] Using direct API for text generation`);
       return this.processDirectAPI(cleanQuery, userContext, startTime);
     }
-    
+
     // TIER 2: Manual tool routing for single operations (8% of cases)
     if (this.isSingleToolQuery(cleanQuery)) {
       Logger.info(`🔧 [Tier2] Using manual tool routing`);
       return this.processManualToolRouting(cleanQuery, userContext, startTime);
     }
-    
+
     // TIER 3: Full agent for complex workflows (2% of cases)
     Logger.info(`🤖 [Tier3] Using full agent for complex workflow`);
     return this.processFullAgent(cleanQuery, sessionId, userContext, startTime);
@@ -103,11 +132,11 @@ export class TieredJarvisAgent {
       'workflow', 'debug', 'optimize', 'suggest', 'recommend',
       'create a detailed', 'multi-step', 'complex'
     ];
-    
-    const hasComplexKeyword = complexKeywords.some(keyword => 
+
+    const hasComplexKeyword = complexKeywords.some(keyword =>
       query.toLowerCase().includes(keyword)
     );
-    
+
     if (hasComplexKeyword) return false;
 
     const textPatterns = [
@@ -115,16 +144,16 @@ export class TieredJarvisAgent {
       /^(write|create|generate|draft|compose)/i,
       /^(explain|describe|tell me about|what is|how does)/i,
       /^(help me (with|understand)|can you help)/i,
-      
+
       // Question patterns
       /^(what|why|how|when|where|who)/i,
       /\?$/,
-      
+
       // Conversational patterns
       /^(hi|hello|hey|good morning|good afternoon)/i,
       /^(thanks|thank you|thx)/i,
       /^(yes|no|okay|ok|sure)/i,
-      
+
       // Content creation
       /(email|letter|message|text|content|summary|report)/i,
       /(idea|suggestion|advice|recommendation)/i
@@ -139,7 +168,7 @@ export class TieredJarvisAgent {
       'install', 'update', 'download'
     ];
 
-    const hasActionKeyword = actionKeywords.some(keyword => 
+    const hasActionKeyword = actionKeywords.some(keyword =>
       query.toLowerCase().includes(keyword)
     );
 
@@ -162,7 +191,8 @@ export class TieredJarvisAgent {
 
     const toolPatterns = {
       screenshot: /(take|capture|get|grab) .*(screenshot|screen capture|screen shot)/i,
-      appLauncher: /(open|launch|start) (.*app|.*application|chrome|safari|slack|zoom|teams|email|browser)/i,
+      // Match any "open X", "launch X", "start X" - let the tool figure out what X is
+      appLauncher: /(open|launch|start)\s+\S+/i,
       cli: /(run|execute|terminal|command|git|npm|brew|curl|ping)/i,
       fileSystem: /(find|search|locate|look for) .*(file|folder|document)/i
     };
@@ -174,40 +204,31 @@ export class TieredJarvisAgent {
    * TIER 1: Direct API call for text generation
    */
   private async processDirectAPI(
-    query: string, 
+    query: string,
     userContext?: { userId?: string, displayName?: string, email?: string },
     startTime?: number
   ): Promise<string> {
     try {
-      const fastLLM = new ChatOpenAI({
-        apiKey: this.openaiKey,
-        model: "gpt-4o-mini",
-        temperature: 0.3,
-        maxTokens: 512,  // Reduced for speed
-        timeout: 3000,   // 3s timeout
-        maxRetries: 0    // No retries for speed
-      });
+      let fullText = '';
 
-      let systemPrompt = `You are Jarvis, a helpful AI assistant. Be concise and direct.`;
-      
-      if (userContext?.displayName) {
-        systemPrompt += ` User: ${userContext.displayName}.`;
-      }
+      // Use the provider-agnostic llmService for Tier 1
+      await this.llmService.streamResponse(query, [], {
+        onToken: (token) => { fullText += token; },
+        onComplete: (text) => { fullText = text; },
+        onError: (err) => { throw err; }
+      }, true); // Manual trigger for direct response
 
-      const response = await fastLLM.invoke([
-        new SystemMessage(systemPrompt),
-        new HumanMessage(query)
-      ]);
-
-      const result = response.content as string;
       const processingTime = Date.now() - (startTime || Date.now());
       Logger.info(`⚡ [Tier1] Completed in ${processingTime}ms`);
-      
-      return result;
+
+      return fullText;
     } catch (error) {
-      Logger.error('❌ [Tier1] Direct API failed:', error);
-      // Fallback to Tier 3
-      return this.processFullAgent(query, `fallback-${Date.now()}`, userContext, startTime);
+      Logger.error('❌ [Tier1] LLM Service failed:', error);
+      // Fallback to Tier 3 if OpenAI is available, otherwise return error
+      if (this.openaiKey) {
+        return this.processFullAgent(query, `fallback-${Date.now()}`, userContext, startTime);
+      }
+      return "I encountered an error processing your request. Please check your AI settings.";
     }
   }
 
@@ -225,12 +246,15 @@ export class TieredJarvisAgent {
         Logger.info(`📸 [Tier2] Routing to screenshot tool`);
         return await visionTool.func({ action: "capture", query: null });
       }
-      
+
       if (/(open|launch|start)/i.test(query)) {
         Logger.info(`🚀 [Tier2] Routing to app launcher`);
-        return await appLauncherTool.func({ command: query, directExecution: true });
+        // Extract just the app/site name from the query
+        const appMatch = query.match(/(open|launch|start)\s+(\w+)/i);
+        const appName = appMatch ? appMatch[2] : query;
+        return await appLauncherTool.func({ command: `open ${appName}`, directExecution: true });
       }
-      
+
       if (/(run|execute|terminal|command)/i.test(query)) {
         Logger.info(`💻 [Tier2] Routing to CLI tool`);
         // Extract command from query
@@ -238,7 +262,7 @@ export class TieredJarvisAgent {
         const command = commandMatch ? commandMatch[2] : query;
         return await cliTool.func({ command });
       }
-      
+
       if (/(find|search|locate|look for)/i.test(query)) {
         Logger.info(`📁 [Tier2] Routing to file system tool`);
         // Use list operation to find files in common directories
@@ -246,14 +270,22 @@ export class TieredJarvisAgent {
         return await fileSystemTool.func({ operation: 'list', filePath: searchPath });
       }
 
-      // If no specific tool match, fallback to Tier 3
-      Logger.info(`🔄 [Tier2] No tool match, falling back to full agent`);
-      return this.processFullAgent(query, `tier2-fallback-${Date.now()}`, userContext, startTime);
-      
+      // If no specific tool match, fallback to Tier 3 (OpenAI) or Tier 1 (Others)
+      if (this.openaiKey) {
+        Logger.info(`🔄 [Tier2] No tool match, falling back to full agent`);
+        return this.processFullAgent(query, `tier2-fallback-${Date.now()}`, userContext, startTime);
+      } else {
+        Logger.info(`🔄 [Tier2] No tool match, falling back to Tier 1`);
+        return this.processDirectAPI(query, userContext, startTime);
+      }
+
     } catch (error) {
       Logger.error('❌ [Tier2] Manual routing failed:', error);
-      // Fallback to Tier 3
-      return this.processFullAgent(query, `tier2-error-${Date.now()}`, userContext, startTime);
+      // Fallback to Tier 3 if available, otherwise Tier 1
+      if (this.openaiKey) {
+        return this.processFullAgent(query, `tier2-error-${Date.now()}`, userContext, startTime);
+      }
+      return this.processDirectAPI(query, userContext, startTime);
     }
   }
 
@@ -266,6 +298,11 @@ export class TieredJarvisAgent {
     userContext?: { userId?: string, displayName?: string, email?: string },
     startTime?: number
   ): Promise<string> {
+    if (!this.openaiKey) {
+      // Fallback to Tier 1 if OpenAI is missing
+      return this.processDirectAPI(query, userContext, startTime);
+    }
+
     try {
       const result = await this.fullAgent.invoke(
         {
@@ -280,11 +317,11 @@ export class TieredJarvisAgent {
 
       const messages = result.messages || [];
       const lastMessage = messages[messages.length - 1];
-      
+
       let response = '';
       if (lastMessage?.content) {
-        response = typeof lastMessage.content === 'string' 
-          ? lastMessage.content 
+        response = typeof lastMessage.content === 'string'
+          ? lastMessage.content
           : lastMessage.content.map((c: any) => c.text || '').join(' ');
       }
 
@@ -294,7 +331,7 @@ export class TieredJarvisAgent {
 
       const processingTime = Date.now() - (startTime || Date.now());
       Logger.info(`🤖 [Tier3] Completed in ${processingTime}ms`);
-      
+
       return response;
     } catch (error) {
       Logger.error('❌ [Tier3] Full agent failed:', error);

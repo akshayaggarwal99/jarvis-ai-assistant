@@ -68,8 +68,8 @@ export class AppSettingsService {
       privacyConsentGiven: false, // User must explicitly consent
       showWaveform: true, // Show waveform by default
       useOllama: false,
-      ollamaUrl: 'http://localhost:11434',
-      ollamaModel: 'llama3',
+      ollamaUrl: 'http://127.0.0.1:11434',
+      ollamaModel: 'llama3.2:1b',
       customDictationPrompt: defaultDictationPrompt,
       customEmailPrompt: defaultEmailFormattingPrompt,
       customAssistantPrompt: defaultAssistantPrompt

@@ -13,7 +13,7 @@ export class TranscriptionSessionManager {
   private lastSentChunkIndex: number = 0;
   private streamingPartialText: string = '';
   private streamingFinalText: string = '';
-  
+
   // Callbacks
   private onPartialTranscript?: (partialText: string) => void;
 
@@ -25,7 +25,7 @@ export class TranscriptionSessionManager {
     this.analyticsManager = analyticsManager;
     this.useStreamingTranscription = useStreamingTranscription;
     this.onPartialTranscript = onPartialTranscript;
-    
+
     // Pre-initialize transcriber to avoid first-time delays
     this.transcriber = new FastAssistantTranscriber();
   }
@@ -43,7 +43,7 @@ export class TranscriptionSessionManager {
         Logger.warning('🌊 [Transcription] Error stopping previous session:', error);
       }
       this.streamingControl = null;
-      
+
       // Add a small delay to ensure cleanup completes
       await new Promise(resolve => setTimeout(resolve, 100));
     }
@@ -51,7 +51,7 @@ export class TranscriptionSessionManager {
     try {
       // Check if streaming is enabled in settings
       const settings = AppSettingsService.getInstance().getSettings();
-      
+
       // If local whisper is enabled, don't use streaming (local whisper is offline-only)
       if (settings.useLocalWhisper) {
         Logger.info('🌊 [Transcription] Local Whisper enabled - streaming disabled for offline mode');
@@ -59,20 +59,20 @@ export class TranscriptionSessionManager {
         this.useStreamingTranscription = false;
         return;
       }
-      
+
       if (!settings.useDeepgramStreaming) {
         Logger.info('🌊 [Transcription] Deepgram streaming disabled in settings');
         this.streamingControl = null;
         return;
       }
-      
+
       Logger.info('🌊 [Transcription] Initializing Deepgram streaming transcription...');
-      
+
       // Reset streaming state
       this.lastSentChunkIndex = 0;
       this.streamingPartialText = '';
       this.streamingFinalText = '';
-      
+
       // Start streaming transcription with callbacks
       this.streamingControl = await this.transcriber.startStreamingTranscription(
         (partialText: string) => {
@@ -123,7 +123,7 @@ export class TranscriptionSessionManager {
             }
           }
         }
-        
+
         if (sentCount > 0) {
           Logger.debug(`🌊 [Transcription] Sent ${sentCount} audio chunks to streaming`);
         }
@@ -138,7 +138,7 @@ export class TranscriptionSessionManager {
    */
   async transcribe(audioSessionData: AudioSessionData, transcriptionId: string, keyReleaseTime: number): Promise<TranscriptionResult | null> {
     const shouldUseStreaming = this.useStreamingTranscription && this.streamingControl;
-    
+
     if (shouldUseStreaming) {
       return await this.handleStreamingTranscription(transcriptionId, keyReleaseTime);
     } else {
@@ -152,7 +152,7 @@ export class TranscriptionSessionManager {
   private async handleStreamingTranscription(transcriptionId: string, keyReleaseTime: number): Promise<TranscriptionResult | null> {
     try {
       Logger.info('🌊 [Transcription] Finishing streaming transcription...');
-      
+
       if (!this.streamingControl) {
         Logger.warning('🌊 [Transcription] No streaming control available');
         return null;
@@ -161,19 +161,19 @@ export class TranscriptionSessionManager {
       // Check for ultra-fast mode with accumulated text
       if (this.streamingFinalText && this.streamingFinalText.trim().length > 0) {
         Logger.info('⚡ [Transcription] Using accumulated streaming text');
-        
+
         const result: TranscriptionResult = {
           text: this.streamingFinalText.trim(),
           model: 'deepgram-streaming-immediate'
         };
-        
+
         // Track ultra-fast streaming
         this.analyticsManager.trackEvent('ultra_fast_streaming_transcription', {
           textLength: result.text.length,
           model: result.model,
           timestamp: new Date().toISOString()
         });
-        
+
         return result;
       }
 
@@ -181,19 +181,19 @@ export class TranscriptionSessionManager {
       const streamingFinishStartTime = Date.now();
       const finalText = await this.streamingControl.finish();
       const streamingFinishTime = Date.now() - streamingFinishStartTime;
-      
+
       Logger.performance('🌊 [Transcription] Streaming finish completed', streamingFinishTime);
-      
+
       // Use streaming result or fallback
       let resultText = finalText || this.streamingFinalText;
-      
+
       if (!resultText) {
         Logger.warning('🌊 [Transcription] No streaming result available');
         return null;
       }
 
       Logger.success(`🌊 [Transcription] Final streaming result: "${resultText}"`);
-      
+
       return {
         text: resultText,
         model: 'deepgram-streaming'
@@ -212,7 +212,7 @@ export class TranscriptionSessionManager {
         }
         this.streamingControl = null;
       }
-      
+
       // Reset streaming state
       this.lastSentChunkIndex = 0;
       this.streamingPartialText = '';
@@ -225,9 +225,9 @@ export class TranscriptionSessionManager {
    */
   private async handleTraditionalTranscription(audioSessionData: AudioSessionData, transcriptionId: string, keyReleaseTime: number): Promise<TranscriptionResult | null> {
     Logger.info(`🎙️ [Transcription] Starting traditional transcription - ID: ${transcriptionId}`);
-    
+
     const { buffer: audioBuffer, duration } = audioSessionData;
-    
+
     if (!audioBuffer) {
       Logger.error('❌ [Transcription] No audio buffer available');
       return null;
@@ -262,11 +262,11 @@ export class TranscriptionSessionManager {
 
     try {
       const result = await this.transcriber.transcribeFromBuffer(audioBuffer, duration);
-      
+
       if (result?.text) {
         const transcriptionTime = Date.now() - transcriptionStartTime;
         Logger.info(`✅ [Transcription] Completed in ${transcriptionTime}ms: "${result.text}"`);
-        
+
         // Track performance
         this.analyticsManager.trackPerformance('transcription_latency', transcriptionTime, {
           model: result.model,
@@ -282,10 +282,11 @@ export class TranscriptionSessionManager {
           Logger.warning('⚠️ [Transcription] Invalid transcription result');
           return null;
         }
-        
+
         return {
           text: result.text.trim(),
-          model: result.model
+          model: result.model,
+          isAssistant: result.isAssistant
         };
       } else {
         Logger.warning('⚠️ [Transcription] API returned no text');
@@ -294,7 +295,7 @@ export class TranscriptionSessionManager {
     } catch (error) {
       const transcriptionTime = Date.now() - transcriptionStartTime;
       Logger.error(`❌ [Transcription] Failed in ${transcriptionTime}ms:`, error);
-      
+
       // Track error
       this.analyticsManager.trackError('transcription_failed', {
         error: error instanceof Error ? error.message : String(error),
@@ -304,7 +305,7 @@ export class TranscriptionSessionManager {
         transcriptionId,
         timestamp: new Date().toISOString()
       });
-      
+
       return null;
     }
   }
@@ -344,7 +345,7 @@ export class TranscriptionSessionManager {
    */
   async cleanup(): Promise<void> {
     Logger.info('🌊 [Transcription] Cleaning up streaming resources');
-    
+
     if (this.streamingControl) {
       try {
         await this.streamingControl.stop();
@@ -353,13 +354,13 @@ export class TranscriptionSessionManager {
       }
       this.streamingControl = null;
     }
-    
+
     // Reset all streaming state
     this.lastSentChunkIndex = 0;
     this.streamingPartialText = '';
     this.streamingFinalText = '';
     this.useStreamingTranscription = false;
-    
+
     Logger.info('🌊 [Transcription] Cleanup completed');
   }
 }

@@ -26,7 +26,7 @@ export class FastAssistantTranscriber {
     this.secureAPI = SecureAPIService.getInstance();
     this.contextDetector = new ContextDetector();
     this.screenVision = new ScreenVision();
-    
+
     // Pre-warm services in background to avoid first-time delays
     this.warmUpServices();
   }
@@ -55,34 +55,71 @@ export class FastAssistantTranscriber {
 
   private async warmUpServices(): Promise<void> {
     if (this.servicesWarmed) return;
-    
+
     try {
       // Pre-load dictionary context once
       if (!this.dictionaryLoaded) {
         await this.loadDictionaryContext();
       }
-      
+
+      // Check settings for Ollama warm-up
+      const settings = AppSettingsService.getInstance().getSettings();
+      if (settings.useOllama && settings.ollamaUrl) {
+        Logger.info(`🔥 [Warmup] Triggering background warm-up for Ollama (${settings.ollamaModel})...`);
+
+        // Warm up Ollama (fire and forget)
+        this.triggerOllamaWarmup(settings).catch(err => {
+          Logger.debug('Ollama warm-up failed (non-fatal):', err);
+        });
+      }
+
       // Pre-fetch API keys to cache them
       Promise.all([
         this.secureAPI.getOpenAIKey().catch(() => null),
         this.secureAPI.getDeepgramKey().catch(() => null),
         this.secureAPI.getGeminiKey().catch(() => null)
       ]);
-      
+
       this.servicesWarmed = true;
     } catch (error) {
       Logger.debug('Service warm-up failed:', error);
     }
   }
 
+  private async triggerOllamaWarmup(settings: any): Promise<void> {
+    try {
+      // Force IPv4 loopback if localhost is used
+      const safeOllamaUrl = settings.ollamaUrl.replace('localhost', '127.0.0.1');
+
+      await RobustApiCaller.fetchWithRetry(
+        `${safeOllamaUrl}/api/generate`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: settings.ollamaModel || 'llama3.2:1b',
+            prompt: ' ', // Empty prompt just to load model
+            stream: false,
+            options: { num_predict: 1 }
+          })
+        },
+        { timeoutMs: 5000 },
+        'Ollama warmup'
+      );
+      Logger.info(`✅ [Warmup] Ollama model '${settings.ollamaModel}' warmed up and ready`);
+    } catch (error) {
+      Logger.debug('Ollama warm-up failed (non-fatal):', error);
+    }
+  }
+
   private async loadDictionaryContext(): Promise<void> {
     if (this.dictionaryLoaded) return;
-    
+
     try {
       const { nodeDictionaryService } = await import('../services/node-dictionary');
       this.dictionaryContext = nodeDictionaryService.getWordsForTranscription();
       this.dictionaryLoaded = true;
-      
+
       if (this.dictionaryContext) {
         Logger.info(`📖 [Dictionary] Loaded keywords: ${this.dictionaryContext.substring(0, 50)}...`);
       } else {
@@ -105,7 +142,7 @@ export class FastAssistantTranscriber {
 
   async transcribeAndRespond(audioPath: string): Promise<{ text: string; isAssistant: boolean; model: string }> {
     Logger.info('🎯 [FastAssistant] Starting transcription...');
-    
+
     // Try OpenAI first for speed, then fallback to Gemini
     try {
       return await this.transcribeWithOpenAI(audioPath);
@@ -116,7 +153,8 @@ export class FastAssistantTranscriber {
   }
 
   async transcribeFromBuffer(audioBuffer: Buffer, audioDurationMs?: number): Promise<{ text: string; isAssistant: boolean; model: string }> {
-    Logger.info(`🎯 [FastAssistant] Starting buffer transcription (${Math.round(audioBuffer.length/1024)}KB, ${audioDurationMs ? Math.round(audioDurationMs/1000) + 's' : 'unknown duration'})`);
+    const startTime = Date.now();
+    Logger.info(`🎯 [FastAssistant] Starting buffer transcription (${Math.round(audioBuffer.length / 1024)}KB, ${audioDurationMs ? Math.round(audioDurationMs / 1000) + 's' : 'unknown duration'})`);
 
     // Ensure services are warmed up (usually already done in constructor)
     await this.warmUpServices();
@@ -124,7 +162,7 @@ export class FastAssistantTranscriber {
     // Check if local Whisper is enabled in settings
     const settings = AppSettingsService.getInstance().getSettings();
     Logger.info(`🎯 [FastAssistant] Settings check - useLocalWhisper: ${settings.useLocalWhisper}, localWhisperModel: ${settings.localWhisperModel}`);
-    
+
     if (settings.useLocalWhisper === true) {
       Logger.info('🎤 [FastAssistant] Local Whisper mode enabled - using offline transcription');
       try {
@@ -141,9 +179,9 @@ export class FastAssistantTranscriber {
     // Check if audio needs compression for long recordings (instead of chunking)
     const compressedTranscriber = this.getCompressedTranscriber();
     const needsCompression = compressedTranscriber.needsCompression(audioBuffer, audioDurationMs);
-    
+
     if (needsCompression && audioDurationMs) {
-      Logger.info(`️ [Fast] Long audio detected (${Math.round(audioDurationMs/1000)}s, ${Math.round(audioBuffer.length/1024)}KB) - using compression`);
+      Logger.info(`️ [Fast] Long audio detected (${Math.round(audioDurationMs / 1000)}s, ${Math.round(audioBuffer.length / 1024)}KB) - using compression`);
       const result = await compressedTranscriber.transcribeCompressedBuffer(audioBuffer, audioDurationMs);
       return this.processTranscription(result.text, result.model);
     }
@@ -159,7 +197,7 @@ export class FastAssistantTranscriber {
         if (openaiKey) {
           const keyPreview = openaiKey.substring(0, 10) + '...' + openaiKey.slice(-4);
           Logger.info(`🔑 [OpenAI] Using API key: ${keyPreview}`);
-          
+
           try {
             return await this.transcribeWithOpenAIBuffer(audioBuffer);
           } catch (error) {
@@ -181,7 +219,7 @@ export class FastAssistantTranscriber {
       } catch (error) {
         Logger.warning('Deepgram failed, falling back to OpenAI:', error);
       }
-      
+
       // Fallback to OpenAI for short audio too
       try {
         const openaiKey = await this.secureAPI.getOpenAIKey();
@@ -212,20 +250,22 @@ export class FastAssistantTranscriber {
       Logger.error('🔍 [Network] Diagnostic test failed:', diagnosticError);
     }
 
+    const totalTime = Date.now() - startTime;
+    Logger.info(`⏱️ [FastAssistant] Total buffer transcription took ${totalTime}ms`);
     throw new Error('No API keys available');
   }
 
   // Simplified methods that will work with SecureAPIService
   private async transcribeWithGeminiFlash(audioPath: string): Promise<{ text: string; isAssistant: boolean; model: string }> {
     Logger.info('⚡ [Gemini] Using Flash 2.0 for transcription...');
-    
+
     const audioBuffer = fs.readFileSync(audioPath);
     return await this.transcribeWithGeminiFlashBuffer(audioBuffer);
   }
 
   private async transcribeWithOpenAI(audioPath: string): Promise<{ text: string; isAssistant: boolean; model: string }> {
     Logger.info('🔥 [OpenAI] Attempting transcription...');
-    
+
     const audioBuffer = fs.readFileSync(audioPath);
     return await this.transcribeWithOpenAIBuffer(audioBuffer);
   }
@@ -241,7 +281,7 @@ export class FastAssistantTranscriber {
       }
 
       const response = await RobustApiCaller.fetchWithRetry(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${geminiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -271,7 +311,7 @@ export class FastAssistantTranscriber {
 
       const result = await response.json() as any;
       const text = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
-      
+
       return await this.processTranscription(text, 'gemini-2.5-flash-lite');
     } catch (error) {
       const analysis = RobustApiCaller.analyzeError(error);
@@ -283,7 +323,7 @@ export class FastAssistantTranscriber {
   private async transcribeWithOpenAIBuffer(audioBuffer: Buffer): Promise<{ text: string; isAssistant: boolean; model: string }> {
     try {
       const openaiKey = await this.secureAPI.getOpenAIKey();
-      
+
       // Use gpt-4o-mini-transcribe with the correct API approach
       const result = await this.tryOpenAIModelBuffer(audioBuffer, 'gpt-4o-mini-transcribe', openaiKey);
       if (result) {
@@ -311,7 +351,7 @@ export class FastAssistantTranscriber {
     // For gpt-4o-mini-transcribe, use WAV format directly (PCM often fails)
     // For other models like whisper-1, try PCM first for efficiency
     const useWAVFirst = model === 'gpt-4o-mini-transcribe' || model === 'gpt-4o-transcribe';
-    
+
     if (useWAVFirst) {
       return await this.tryWAVFormat(audioBuffer, model, openaiKey);
     } else {
@@ -324,15 +364,15 @@ export class FastAssistantTranscriber {
       const { NativeAudioRecorder } = await import('../audio/native-audio-recorder');
       const wavBuffer = NativeAudioRecorder.convertPCMToWAV(audioBuffer);
       Logger.debug(`🎵 [OpenAI] Using WAV: ${audioBuffer.length} bytes PCM → ${wavBuffer.length} bytes WAV`);
-      
+
       const formData = new FormData();
       formData.append('file', wavBuffer, { filename: 'audio.wav', contentType: 'audio/wav' });
       formData.append('model', model);
-      
+
       // Enhanced parameters for better low-volume audio detection
       formData.append('temperature', '0'); // Deterministic for consistency with whisper audio
       formData.append('language', 'en'); // Force English to avoid language detection overhead
-      
+
       if (this.dictionaryContext) {
         const promptHint = `This audio may contain these terms: ${this.dictionaryContext}`;
         formData.append('prompt', promptHint);
@@ -363,11 +403,11 @@ export class FastAssistantTranscriber {
       const formData = new FormData();
       formData.append('file', audioBuffer, { filename: 'audio.pcm', contentType: 'audio/pcm' });
       formData.append('model', model);
-      
+
       // Enhanced parameters for better low-volume audio detection
       formData.append('temperature', '0'); // Deterministic for consistency with whisper audio
       formData.append('language', 'en'); // Force English to avoid language detection overhead
-      
+
       if (this.dictionaryContext) {
         const promptHint = `This audio may contain these terms: ${this.dictionaryContext}`;
         formData.append('prompt', promptHint);
@@ -388,95 +428,140 @@ export class FastAssistantTranscriber {
     } catch (error) {
       const analysis = RobustApiCaller.analyzeError(error);
       Logger.warning(`${model} with PCM failed (${analysis.category}), trying WAV conversion: ${error.message}`, { suggestion: analysis.suggestion });
-      
+
       // Fallback: Convert to WAV if PCM fails
       return await this.tryWAVFormat(audioBuffer, model, openaiKey);
     }
   }
 
   private async processTranscription(transcriptText: string, model: string): Promise<{ text: string; isAssistant: boolean; model: string }> {
+    const startTime = Date.now();
     Logger.info(`📝 [${model}] Raw transcript: "${transcriptText}"`);
-    
+
     if (!transcriptText) {
       throw new Error('No transcript generated');
     }
 
-    // Check if this is an assistant request
+    // ISSUE #12: Filter out silence/noise tokens from transcription
+    const noiseTokens = [
+      /\[BLANK_AUDIO\]/g,
+      /\[SILENCE\]/g,
+      /\[NOISE\]/g,
+      /\(music\)/g,
+      /\(static\)/g,
+      /\(laughter\)/g,
+      /\s*\[\s*.*?\s*\]\s*/g, // Any bracketed tokens
+    ];
+
+    let filteredText = transcriptText;
+    for (const pattern of noiseTokens) {
+      filteredText = filteredText.replace(pattern, ' ');
+    }
+    filteredText = filteredText.trim().replace(/\s+/g, ' ');
+
+    if (!filteredText) {
+      Logger.info('🔇 [FastAssistant] Transcription contained only noise - skipping');
+      throw new Error('No transcript generated (noise filtered)');
+    }
+
+    transcriptText = filteredText;
+
+    // Check if this is an assistant request using the RAW text (before cleanup)
+    // This prevents the AI cleaner from removing the wake word (e.g. "Hey Jarvis")
     const isAssistant = this.isAssistantRequest(transcriptText);
-    
+
     if (isAssistant) {
-      Logger.info('🤖 [Assistant] Detected assistant request - clearing previous context');
-      
+      Logger.info('🤖 [Assistant] Detected assistant request - skipping dictation cleanup');
+      Logger.info('🤖 [Assistant] Clearing previous context');
+
       // Clear any previous context for fresh assistant conversation
       if ((global as any).conversationContext) {
         (global as any).conversationContext = [];
       }
-      
+
       // Stop any existing correction monitoring
       if ((global as any).correctionDetector) {
         (global as any).correctionDetector.stopMonitoring();
       }
-      
+
+      // Return the raw text (or we could lightly clean it, but usually raw is better for command parsing)
       return { text: transcriptText, isAssistant: true, model };
-    } else {
-      Logger.info('💬 [Dictation] Processing as dictation');
-      return { text: transcriptText, isAssistant: false, model };
     }
+
+    // AUTO-CLEANUP: Process with AI if enabled (handles Ollama/Gemini based on settings)
+    // This fixes local transcription not having proper formatting or command/punctuation cleanup
+    let processedText = transcriptText;
+
+    // SMART SKIP: If text already appears well-formatted (from Deepgram smart_format), skip AI cleanup
+    // This check: starts with uppercase, ends with sentence punctuation, has some internal punctuation
+    const looksFormatted = /^[A-Z]/.test(transcriptText) && /[.!?]$/.test(transcriptText.trim());
+    const isFromFormattedSource = model.includes('deepgram') || model.includes('gpt-4o');
+
+    if (looksFormatted && isFromFormattedSource) {
+      console.log(`⚡ [SmartSkip] Text already formatted from ${model}, skipping AI cleanup for speed`);
+    } else {
+      try {
+        if (this.isAiPostProcessingEnabled()) {
+          console.log(`🔄 [AI Cleanup] Starting cleanup for ${model}...`);
+          const cleanupStart = Date.now();
+          const cleaned = await this.cleanTranscriptionWithAI(transcriptText);
+          console.log(`⏱️ [AI Cleanup] Took ${Date.now() - cleanupStart}ms`);
+          if (cleaned && cleaned !== transcriptText) {
+            processedText = cleaned;
+            Logger.info(`✨ [AutoClean] Applied AI formatting: "${transcriptText.substring(0, 30)}..." → "${processedText.substring(0, 30)}..."`);
+          }
+        }
+      } catch (error) {
+        // Don't fail the whole transcription if cleanup fails
+        Logger.warning('Process transcription cleanup failed:', error);
+      }
+    }
+
+    Logger.info('💬 [Dictation] Processing as dictation');
+    Logger.info(`⏱️ [FastAssistant] Transcription processing took ${Date.now() - startTime}ms`);
+    return { text: processedText, isAssistant: false, model };
   }
 
   isAssistantRequest(text: string): boolean {
+    if (!text) return false;
+
+    // Strict rule: Assistant mode only if "Jarvis" is in the first 3 words
     const lowerText = text.toLowerCase().trim();
-    
-    // Only trigger on explicit assistant invocations
-    const explicitTriggers = [
-      'jarvis',
-      'hey jarvis',
-      'assistant',
-      'hey assistant'
-    ];
-    
-    // Check for explicit triggers anywhere in the text
-    if (explicitTriggers.some(trigger => lowerText.includes(trigger))) {
-      return true;
+    // Remove ALL punctuation using a more robust regex (keep letters, numbers, spaces)
+    const cleanText = lowerText.replace(/[^\w\s]|_/g, '');
+    const words = cleanText.split(/\s+/);
+
+    // Check first 3 words
+    const firstThreeWords = words.slice(0, 3);
+
+    Logger.debug(`🔍 [AssistantCheck] Text: "${text}" -> Clean: "${cleanText}" -> Words: ${JSON.stringify(firstThreeWords)}`);
+
+    // Check if any of the first 3 words is "jarvis"
+    const isMatch = firstThreeWords.some(word => word === 'jarvis');
+
+    if (isMatch) {
+      Logger.info(`🤖 [AssistantCheck] MATCH DETECTED in words: ${JSON.stringify(firstThreeWords)}`);
     }
-    
-    // Check for question patterns at the START of the text only (not in the middle)
-    const questionStarters = [
-      'help',
-      'help me',
-      'can you help',
-      'can you tell me',
-      'what is',
-      'what are',
-      'how do',
-      'how can',
-      'where is',
-      'where can',
-      'when is',
-      'when can',
-      'why is',
-      'why does'
-    ];
-    
-    return questionStarters.some(starter => lowerText.startsWith(starter));
+
+    return isMatch;
   }
 
   private async retryWithBackoff<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
     let lastError: Error | null = null;
-    
+
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         return await fn();
       } catch (error) {
         lastError = error as Error;
         if (attempt === maxRetries) break;
-        
+
         const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
         Logger.info(`⏳ Retry ${attempt}/${maxRetries} in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
-    
+
     throw lastError || new Error('Max retries exceeded');
   }
 
@@ -491,8 +576,10 @@ export class FastAssistantTranscriber {
 
       const { DeepgramTranscriber } = await import('./deepgram-transcriber');
       const deepgram = new DeepgramTranscriber(deepgramKey);
+      const startTime = Date.now();
       const result = await deepgram.transcribeFromBuffer(audioBuffer);
-      
+      Logger.info(`⏱️ [Deepgram] Transcription API call took ${Date.now() - startTime}ms`);
+
       if (result) {
         return await this.processTranscription(result.text, result.model);
       }
@@ -510,11 +597,11 @@ export class FastAssistantTranscriber {
     try {
       const settings = AppSettingsService.getInstance().getSettings();
       const modelId = settings.localWhisperModel || 'tiny.en';
-      
+
       Logger.info(`🎤 [LocalWhisper] Starting local transcription with model: ${modelId}`);
       const { LocalWhisperTranscriber } = await import('./local-whisper-transcriber');
       const localWhisper = new LocalWhisperTranscriber();
-      
+
       // Check if model is downloaded
       if (!localWhisper.isModelDownloaded(modelId)) {
         Logger.warning(`🎤 [LocalWhisper] Model ${modelId} not downloaded, attempting download...`);
@@ -526,9 +613,9 @@ export class FastAssistantTranscriber {
           return null;
         }
       }
-      
+
       const result = await localWhisper.transcribeFromBuffer(audioBuffer, modelId);
-      
+
       if (result) {
         return await this.processTranscription(result.text, result.model);
       }
@@ -543,23 +630,23 @@ export class FastAssistantTranscriber {
    * Hybrid streaming transcription: Deepgram for speed + OpenAI for quality
    * Uses Deepgram for real-time feedback, then OpenAI for intelligent cleanup
    */
-  async startStreamingTranscription(onPartialText?: (text: string) => void, onComplete?: (text: string) => void): Promise<{ 
-    sendAudio: (buffer: Buffer) => boolean; 
-    finish: () => Promise<string>; 
-    stop: () => Promise<void> 
+  async startStreamingTranscription(onPartialText?: (text: string) => void, onComplete?: (text: string) => void): Promise<{
+    sendAudio: (buffer: Buffer) => boolean;
+    finish: () => Promise<string>;
+    stop: () => Promise<void>
   } | null> {
     // Check which streaming modes are enabled
     const { AppSettingsService } = await import('../services/app-settings-service');
     const settings = AppSettingsService.getInstance().getSettings();
-    
+
     if (!settings.useDeepgramStreaming) {
       Logger.info('🌊 [Streaming] Deepgram streaming disabled, returning null');
       return null;
     }
-    
+
     // Note: OpenAI streaming is for future hybrid mode implementation
     Logger.info(`🌊 [Streaming] Starting Deepgram streaming transcription`);
-    
+
     try {
       const deepgramKey = await this.secureAPI.getDeepgramKey();
       if (!deepgramKey) {
@@ -587,7 +674,7 @@ export class FastAssistantTranscriber {
           // Store raw Deepgram result
           deepgramResult = completeText;
           Logger.info(`🎙️ [Deepgram] Raw result: "${completeText}"`);
-          
+
           // Immediately show Deepgram result
           if (onComplete) {
             onComplete(completeText);
@@ -608,10 +695,10 @@ export class FastAssistantTranscriber {
           audioChunks.push(buffer);
           return streamingService.sendAudioData(buffer);
         },
-        
+
         finish: async () => {
           const deepgramFinal = await streamingService.finishStreaming();
-          
+
           // Post-process with OpenAI for intelligent cleanup
           if (audioChunks.length > 0 && deepgramFinal && deepgramFinal.trim().length > 10) {
             try {
@@ -620,13 +707,13 @@ export class FastAssistantTranscriber {
                 Logger.debug('🤖 [Hybrid] AI post-processing disabled in settings, skipping cleanup');
                 return deepgramFinal;
               }
-              
+
               Logger.info('🔄 [Hybrid] Post-processing with AI text cleanup...');
               const cleanedText = await this.cleanTranscriptionWithAI(deepgramFinal);
-              
+
               if (cleanedText && cleanedText !== deepgramFinal) {
                 Logger.success(`✨ [Hybrid] AI cleanup: "${deepgramFinal}" → "${cleanedText}"`);
-                
+
                 // Send the cleaned result as final
                 if (onComplete) {
                   onComplete(cleanedText);
@@ -637,10 +724,10 @@ export class FastAssistantTranscriber {
               Logger.warning('🔄 [Hybrid] AI text cleanup failed, using Deepgram result:', error);
             }
           }
-          
+
           return deepgramFinal;
         },
-        
+
         stop: async () => {
           audioChunks = []; // Clear audio buffer
           return streamingService.stopStreaming();
@@ -675,6 +762,7 @@ export class FastAssistantTranscriber {
    * Uses Gemini for 44% faster processing than GPT-4o-mini
    */
   async cleanTranscriptionWithAI(rawText: string): Promise<string> {
+    const startTime = Date.now();
     if (!rawText || !rawText.trim()) {
       return rawText;
     }
@@ -686,17 +774,13 @@ export class FastAssistantTranscriber {
     }
 
     try {
-      const geminiKey = await this.secureAPI.getGeminiKey();
-      if (!geminiKey) {
-        Logger.warning('🔄 [Cleanup] No Gemini key available for text cleanup');
-        return rawText;
-      }
-
+      const settings = AppSettingsService.getInstance().getSettings();
       const cleanupPrompt = `Clean up this voice transcription by ONLY removing filler words and fixing grammar. DO NOT change or remove any meaningful words.
 
 ONLY remove these filler words: um, uh, like, you know, so, well, actually, basically, literally, totally, really (when used as filler)
 
 DO NOT remove or change: maybe, perhaps, possibly, let's see, I think, we should, consider, proposal, any meaningful content words
+DO NOT remove "Jarvis", "Hey Jarvis", "Assistant", or "Hey Assistant" (these are command triggers)
 
 CRITICAL - PRESERVE SIGNATURES:
 • If the text contains email signatures like "Best, [Name]", "Regards, [Name]", "Thanks, [Name]", "Sincerely, [Name]", "Cheers, [Name]" - PRESERVE THEM EXACTLY
@@ -710,21 +794,84 @@ CRITICAL - FILE EXTENSIONS:
 • Examples: "readme dot md" → "readme.md", "main dot java" → "main.java", "config dot json" → "config.json"
 • Common file extensions: md, txt, pdf, doc, docx, xls, xlsx, ppt, pptx, jpg, png, gif, mp3, mp4, avi, zip, tar, gz, js, ts, py, java, cpp, c, h, css, html, xml, yaml, yml, sql, sh, bat, exe, dll, so, dmg, app
 
+CRITICAL - EMOJIS:
+• If the user describes an emoji (e.g., "muscle emoji", "smiley face", "heart emoji"), replace it with the actual emoji symbol.
+• Examples: "muscle emoji" → "💪", "smiley face" → "🙂", "thumbs up" → "👍", "heart emoji" → "❤️", "fire emoji" → "🔥"
+• DO NOT add emojis that were not explicitly described or spoken (e.g., do not add 😊 unless user said "smiley face").
+
+CRITICAL - SELF CORRECTIONS:
+• If the user corrects themselves (e.g., "at 4pm, sorry 5pm" or "on Monday, I mean Tuesday"), use ONLY the correction.
+• Example: "meet at 4pm sorry 5pm" → "meet at 5pm"
+• Example: "Hello John, I mean Jane" → "Hello Jane"
+
 Rules:
-1. PRESERVE ALL meaningful words exactly as spoken
+1. PRESERVE meaningful content (but apply self-corrections)
 2. Only remove obvious filler words from the list above
 3. Fix punctuation and capitalization
 4. Keep the same sentence structure and meaning
-5. Do not make the text more concise by removing content
+5. Do not make the text more concise by removing content (unless it's a self-correction)
 6. NEVER change email signatures or closings
 7. Convert "dot" to "." when followed by file extensions
+8. Convert spoken emoji descriptions to actual emoji symbols
+9. CRITICAL: Output ONLY the cleaned text. Do NOT add preamble like "Sure" or "Here is the cleaned text".
 
 Original: "${rawText}"
 
-Cleaned:`;
+Cleaned (Output ONLY the cleaned text, no "Here is the result", no quotes, no explanations):`;
+
+      // 1. Try Ollama if enabled
+      if (settings.useOllama && settings.ollamaUrl) {
+        try {
+          Logger.info(`🦙 [Cleanup] Using Ollama (${settings.ollamaModel || 'llama3.2:1b'})...`);
+
+          // Fix: Node 17+ resolves localhost to ::1 (IPv6) which Ollama might not listen on
+          // Force IPv4 loopback if localhost is used
+          const safeOllamaUrl = settings.ollamaUrl.replace('localhost', '127.0.0.1');
+
+          const response = await RobustApiCaller.fetchWithRetry(
+            `${safeOllamaUrl}/api/chat`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: settings.ollamaModel || 'qwen2.5:0.5b',
+                messages: [
+                  { role: 'system', content: 'You are a text formatting tool, not a chatbot. You must accept the input text and output ONLY the formatted version using the rules provided. Do not acknowledge, do not explain, do not add preamble. Just output the result.' },
+                  { role: 'user', content: cleanupPrompt }
+                ],
+                stream: false,
+                options: {
+                  temperature: 0.1,
+                  num_predict: 500
+                }
+              })
+            },
+            { timeoutMs: 30000 },
+            'Ollama text cleanup'
+          );
+
+          const result = await response.json() as any;
+          // Check both formats: chat (message.content) and generate (response)
+          const cleanedText = result.message?.content?.trim() || result.response?.trim();
+
+          if (cleanedText) {
+            return this.verifyAndReturnCleanup(rawText, cleanedText);
+          }
+        } catch (ollamaError) {
+          Logger.warning('🦙 [Cleanup] Ollama failed, falling back to Gemini:', ollamaError);
+          // Fall through to Gemini
+        }
+      }
+
+      // 2. Fallback to Gemini
+      const geminiKey = await this.secureAPI.getGeminiKey();
+      if (!geminiKey) {
+        Logger.warning('🔄 [Cleanup] No Gemini key available for text cleanup');
+        return rawText;
+      }
 
       const response = await RobustApiCaller.fetchWithRetry(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${geminiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -734,7 +881,9 @@ Cleaned:`;
             }],
             generationConfig: {
               temperature: 0.1,
-              maxOutputTokens: 500
+              maxOutputTokens: 500,
+              topP: 0.8,
+              topK: 40
             }
           })
         },
@@ -747,41 +896,10 @@ Cleaned:`;
       const result = await response.json() as any;
       const cleanedText = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
 
-      if (cleanedText && cleanedText !== rawText) {
-        Logger.info(`✨ [Cleanup] "${rawText}" → "${cleanedText}"`);
-        
-        // CRITICAL: Only restore signatures if CONTENT changes, not just formatting
-        const originalSignature = rawText.match(/(Best|Regards|Thanks|Sincerely|Cheers),?\s*[A-Za-z]+/i);
-        const newSignatureSingleLine = cleanedText.match(/(Best|Regards|Thanks|Sincerely|Cheers),?\s*[A-Za-z]+/i);
-        const newSignatureMultiLine = cleanedText.match(/(Best|Regards|Thanks|Sincerely|Cheers),?\s*\n\s*[A-Za-z]+/i);
-        const newSignature = newSignatureSingleLine || newSignatureMultiLine;
-        
-        if (originalSignature) {
-          if (newSignature) {
-            // Extract just the signature words to compare content, not format
-            // This allows AI to improve formatting (add commas, line breaks) while preserving content
-            const originalWords = originalSignature[0].replace(/[,\s\n]+/g, ' ').trim().toLowerCase();
-            const newWords = newSignature[0].replace(/[,\s\n]+/g, ' ').trim().toLowerCase();
-            
-            if (originalWords !== newWords) {
-              Logger.warning(`⚠️ [Cleanup] SIGNATURE CONTENT CHANGED: "${originalSignature[0]}" → "${newSignature[0]}" - RESTORING ORIGINAL`);
-              // Restore the original signature
-              const signaturePattern = /(Best|Regards|Thanks|Sincerely|Cheers),?\s*\n?\s*[A-Za-z]+/i;
-              const finalText = cleanedText.replace(signaturePattern, originalSignature[0]);
-              Logger.info(`🛡️ [Cleanup] RESTORED original signature: "${originalSignature[0]}"`);
-              return finalText;
-            } else {
-              Logger.info(`✅ [Cleanup] Signature content preserved: "${originalSignature[0]}" → "${newSignature[0]}"`);
-            }
-          } else {
-            Logger.warning(`⚠️ [Cleanup] Signature was removed! Original: "${originalSignature[0]}"`);
-            const finalText = cleanedText + ' ' + originalSignature[0];
-            Logger.info(`🛡️ [Cleanup] RESTORED removed signature: "${originalSignature[0]}"`);
-            return finalText;
-          }
-        }
-        
-        return cleanedText;
+      Logger.info(`⏱️ [AI Cleanup] Cleanup with ${settings.useOllama ? 'Ollama' : 'Gemini'} took ${Date.now() - startTime}ms`);
+
+      if (cleanedText) {
+        return this.verifyAndReturnCleanup(rawText, cleanedText);
       }
 
       return rawText;
@@ -789,5 +907,46 @@ Cleaned:`;
       Logger.warning('🔄 [Cleanup] Text cleanup failed, using original:', error);
       return rawText;
     }
+  }
+
+  /**
+   * Verify cleanup didn't break signatures or critical content
+   */
+  private verifyAndReturnCleanup(rawText: string, cleanedText: string): string {
+    if (cleanedText && cleanedText !== rawText) {
+      // CRITICAL: Only restore signatures if CONTENT changes, not just formatting
+      const originalSignature = rawText.match(/(Best|Regards|Thanks|Sincerely|Cheers),?\s*[A-Za-z]+/i);
+      const newSignatureSingleLine = cleanedText.match(/(Best|Regards|Thanks|Sincerely|Cheers),?\s*[A-Za-z]+/i);
+      const newSignatureMultiLine = cleanedText.match(/(Best|Regards|Thanks|Sincerely|Cheers),?\s*\n\s*[A-Za-z]+/i);
+      const newSignature = newSignatureSingleLine || newSignatureMultiLine;
+
+      if (originalSignature) {
+        if (newSignature) {
+          // Extract just the signature words to compare content, not format
+          // This allows AI to improve formatting (add commas, line breaks) while preserving content
+          const originalWords = originalSignature[0].replace(/[,\s\n]+/g, ' ').trim().toLowerCase();
+          const newWords = newSignature[0].replace(/[,\s\n]+/g, ' ').trim().toLowerCase();
+
+          if (originalWords !== newWords) {
+            Logger.warning(`⚠️ [Cleanup] SIGNATURE CONTENT CHANGED: "${originalSignature[0]}" → "${newSignature[0]}" - RESTORING ORIGINAL`);
+            // Restore the original signature
+            const signaturePattern = /(Best|Regards|Thanks|Sincerely|Cheers),?\s*\n?\s*[A-Za-z]+/i;
+            const finalText = cleanedText.replace(signaturePattern, originalSignature[0]);
+            Logger.info(`🛡️ [Cleanup] RESTORED original signature: "${originalSignature[0]}"`);
+            return finalText;
+          } else {
+            Logger.info(`✅ [Cleanup] Signature content preserved: "${originalSignature[0]}" → "${newSignature[0]}"`);
+          }
+        } else {
+          Logger.warning(`⚠️ [Cleanup] Signature was removed! Original: "${originalSignature[0]}"`);
+          const finalText = cleanedText + ' ' + originalSignature[0];
+          Logger.info(`🛡️ [Cleanup] RESTORED removed signature: "${originalSignature[0]}"`);
+          return finalText;
+        }
+      }
+
+      return cleanedText;
+    }
+    return rawText;
   }
 }

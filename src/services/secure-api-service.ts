@@ -49,12 +49,12 @@ export class SecureAPIService {
       const settings = appSettings.getSettings();
       return {
         useOllama: settings.useOllama ?? false,
-        ollamaUrl: settings.ollamaUrl ?? 'http://localhost:11434',
+        ollamaUrl: settings.ollamaUrl ?? 'http://127.0.0.1:11434',
         ollamaModel: settings.ollamaModel ?? 'llama3'
       };
     } catch (error) {
       Logger.debug('[SecureAPI] App settings not available for Ollama');
-      return { useOllama: false, ollamaUrl: 'http://localhost:11434', ollamaModel: 'llama3' };
+      return { useOllama: false, ollamaUrl: 'http://127.0.0.1:11434', ollamaModel: 'llama3' };
     }
   }
 
