@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { theme, themeComponents } from '../styles/theme';
 import { defaultDictationPrompt, defaultEmailFormattingPrompt, defaultAssistantPrompt } from '../prompts/prompts';
+import { useAudioDevices } from '../hooks/useAudioDevices';
 
 // Tab types
 type SettingsTab = 'general' | 'transcription' | 'ai-models' | 'prompts' | 'system';
@@ -81,6 +82,10 @@ const Settings: React.FC = () => {
   const [availableOllamaModels, setAvailableOllamaModels] = useState<string[]>([]);
   const [ollamaStatus, setOllamaStatus] = useState<'connected' | 'error' | 'checking' | 'idle'>('idle');
 
+  // Audio Device Selection
+  const { devices: audioDevices, loading: audioDevicesLoading } = useAudioDevices();
+  const [preferredMicrophone, setPreferredMicrophone] = useState<string>('default');
+
   // Saving states
   const [transcriptionKeysSaving, setTranscriptionKeysSaving] = useState(false);
   const [transcriptionKeysSaved, setTranscriptionKeysSaved] = useState(false);
@@ -106,6 +111,7 @@ const Settings: React.FC = () => {
     { key: 'option', label: 'Option (⌥)', description: 'Push-to-talk - left or right side' },
     { key: 'control', label: 'Control (⌃)', description: 'Push-to-talk - bottom left corner' },
     { key: 'command', label: 'Command (⌘)', description: 'Push-to-talk - left or right Command key' },
+    { key: 'shift', label: 'Shift (⇧)', description: 'Push-to-talk - left or right Shift key' },
   ];
 
   // Tab configuration
@@ -198,6 +204,7 @@ const Settings: React.FC = () => {
           setLocalWhisperModel(appSettings.localWhisperModel ?? 'tiny.en');
           setUserName(appSettings.userName ?? '');
           setShowWaveform(appSettings.showWaveform ?? true);
+          setPreferredMicrophone(appSettings.preferredMicrophone ?? 'default');
 
           // Patch: If any prompt is empty string, update settings file to use default
           const electronAPI = (window as any).electronAPI;
@@ -633,6 +640,19 @@ const Settings: React.FC = () => {
     }
   };
 
+  const handleMicrophoneChange = async (deviceId: string) => {
+    setPreferredMicrophone(deviceId);
+    try {
+      const electronAPI = (window as any).electronAPI;
+      if (electronAPI?.appUpdateSettings) {
+        await electronAPI.appUpdateSettings({ preferredMicrophone: deviceId === 'default' ? null : deviceId });
+        console.log('[Settings] Microphone changed to:', deviceId);
+      }
+    } catch (error) {
+      console.error('[Settings] Failed to save microphone setting:', error);
+    }
+  };
+
   // Toggle component for reuse
   const Toggle = ({ enabled, onToggle, disabled = false }: { enabled: boolean; onToggle: () => void; disabled?: boolean }) => (
     <button
@@ -869,6 +889,42 @@ const Settings: React.FC = () => {
   // Render Transcription Tab
   const renderTranscriptionTab = () => (
     <div className="space-y-6">
+      {/* Microphone Selection */}
+      <div className={`${theme.glass.primary} ${theme.radius.xl} p-6 ${theme.shadow}`}>
+        <h3 className={`font-medium ${theme.text.primary} mb-4 flex items-center gap-2`}>
+          <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+          </svg>
+          Microphone
+        </h3>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <h4 className={`font-medium ${theme.text.primary} mb-1`}>Input Device</h4>
+            <p className={`text-sm ${theme.text.tertiary}`}>Choose which microphone to use for voice dictation.</p>
+          </div>
+          <div className="relative min-w-[200px]">
+            <select
+              value={preferredMicrophone}
+              onChange={(e) => handleMicrophoneChange(e.target.value)}
+              disabled={audioDevicesLoading}
+              className="w-full bg-black/40 rounded-xl px-4 py-3 text-white border border-white/20 focus:border-white/40 focus:outline-none transition-colors text-sm appearance-none cursor-pointer"
+            >
+              {audioDevices.map((device) => (
+                <option key={device.deviceId} value={device.deviceId} className="bg-gray-900 text-white py-2">
+                  {device.label}
+                </option>
+              ))}
+            </select>
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+              <svg className="w-4 h-4 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Local Whisper */}
       <div className={`${theme.glass.primary} ${theme.radius.xl} p-6 ${theme.shadow}`}>
         <h3 className={`font-medium ${theme.text.primary} mb-6 flex items-center gap-2`}>
@@ -1147,8 +1203,8 @@ const Settings: React.FC = () => {
                         type="button"
                         onClick={() => handleOllamaModelChange(model)}
                         className={`px-2 py-0.5 text-[10px] rounded-md border transition-all ${ollamaModel === model
-                            ? 'bg-blue-500/20 border-blue-500/40 text-blue-300'
-                            : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10'
+                          ? 'bg-blue-500/20 border-blue-500/40 text-blue-300'
+                          : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10'
                           }`}
                       >
                         {model}
