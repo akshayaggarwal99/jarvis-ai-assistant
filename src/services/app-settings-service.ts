@@ -31,6 +31,7 @@ interface AppSettings {
   ollamaModel?: string;
   // Audio Device Settings
   preferredMicrophone?: string; // Device ID of preferred microphone (null = system default)
+  transcriptionLanguage?: string; // Language code for transcription (e.g., 'en-US', 'es', 'fr')
   // Custom Prompts
   customDictationPrompt?: string;
   customEmailPrompt?: string;
@@ -74,7 +75,8 @@ export class AppSettingsService {
       ollamaModel: 'llama3.2:1b',
       customDictationPrompt: defaultDictationPrompt,
       customEmailPrompt: defaultEmailFormattingPrompt,
-      customAssistantPrompt: defaultAssistantPrompt
+      customAssistantPrompt: defaultAssistantPrompt,
+      transcriptionLanguage: 'en-US'
     };
   }
 

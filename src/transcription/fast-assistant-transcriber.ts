@@ -176,6 +176,8 @@ export class FastAssistantTranscriber {
       }
     }
 
+    const transcriptionLanguage = settings.transcriptionLanguage || 'en-US';
+
     // Check if audio needs compression for long recordings (instead of chunking)
     const compressedTranscriber = this.getCompressedTranscriber();
     const needsCompression = compressedTranscriber.needsCompression(audioBuffer, audioDurationMs);
@@ -199,7 +201,7 @@ export class FastAssistantTranscriber {
           Logger.info(`🔑 [OpenAI] Using API key: ${keyPreview}`);
 
           try {
-            return await this.transcribeWithOpenAIBuffer(audioBuffer);
+            return await this.transcribeWithOpenAIBuffer(audioBuffer, transcriptionLanguage);
           } catch (error) {
             Logger.warning('OpenAI failed, falling back to Gemini:', error);
           }
@@ -212,7 +214,7 @@ export class FastAssistantTranscriber {
     } else {
       // For shorter audio (<10s), try Deepgram first for speed
       try {
-        const deepgramResult = await this.transcribeWithDeepgram(audioBuffer);
+        const deepgramResult = await this.transcribeWithDeepgram(audioBuffer, transcriptionLanguage);
         if (deepgramResult) {
           return deepgramResult;
         }
@@ -224,7 +226,7 @@ export class FastAssistantTranscriber {
       try {
         const openaiKey = await this.secureAPI.getOpenAIKey();
         if (openaiKey) {
-          return await this.transcribeWithOpenAIBuffer(audioBuffer);
+          return await this.transcribeWithOpenAIBuffer(audioBuffer, transcriptionLanguage);
         }
       } catch (error) {
         Logger.warning('OpenAI fallback failed:', error);
@@ -320,12 +322,12 @@ export class FastAssistantTranscriber {
     }
   }
 
-  private async transcribeWithOpenAIBuffer(audioBuffer: Buffer): Promise<{ text: string; isAssistant: boolean; model: string }> {
+  private async transcribeWithOpenAIBuffer(audioBuffer: Buffer, language?: string): Promise<{ text: string; isAssistant: boolean; model: string }> {
     try {
       const openaiKey = await this.secureAPI.getOpenAIKey();
 
       // Use gpt-4o-mini-transcribe with the correct API approach
-      const result = await this.tryOpenAIModelBuffer(audioBuffer, 'gpt-4o-mini-transcribe', openaiKey);
+      const result = await this.tryOpenAIModelBuffer(audioBuffer, 'gpt-4o-mini-transcribe', openaiKey, language);
       if (result) {
         return await this.processTranscription(result, 'gpt-4o-mini-transcribe');
       }
@@ -337,29 +339,29 @@ export class FastAssistantTranscriber {
     }
   }
 
-  private async tryOpenAIModelBuffer(audioBuffer: Buffer, model: string, openaiKey: string): Promise<string | null> {
+  private async tryOpenAIModelBuffer(audioBuffer: Buffer, model: string, openaiKey: string, language?: string): Promise<string | null> {
     try {
       // All models (whisper-1, gpt-4o-mini-transcribe, gpt-4o-transcribe) use the same transcriptions API
-      return await this.transcribeWithWhisperAPI(audioBuffer, model, openaiKey);
+      return await this.transcribeWithWhisperAPI(audioBuffer, model, openaiKey, language);
     } catch (error) {
       Logger.warning(`${model} failed:`, error);
       return null;
     }
   }
 
-  private async transcribeWithWhisperAPI(audioBuffer: Buffer, model: string, openaiKey: string): Promise<string | null> {
+  private async transcribeWithWhisperAPI(audioBuffer: Buffer, model: string, openaiKey: string, language?: string): Promise<string | null> {
     // For gpt-4o-mini-transcribe, use WAV format directly (PCM often fails)
     // For other models like whisper-1, try PCM first for efficiency
     const useWAVFirst = model === 'gpt-4o-mini-transcribe' || model === 'gpt-4o-transcribe';
 
     if (useWAVFirst) {
-      return await this.tryWAVFormat(audioBuffer, model, openaiKey);
+      return await this.tryWAVFormat(audioBuffer, model, openaiKey, language);
     } else {
-      return await this.tryPCMThenWAV(audioBuffer, model, openaiKey);
+      return await this.tryPCMThenWAV(audioBuffer, model, openaiKey, language);
     }
   }
 
-  private async tryWAVFormat(audioBuffer: Buffer, model: string, openaiKey: string): Promise<string | null> {
+  private async tryWAVFormat(audioBuffer: Buffer, model: string, openaiKey: string, language?: string): Promise<string | null> {
     try {
       const { NativeAudioRecorder } = await import('../audio/native-audio-recorder');
       const wavBuffer = NativeAudioRecorder.convertPCMToWAV(audioBuffer);
@@ -371,7 +373,7 @@ export class FastAssistantTranscriber {
 
       // Enhanced parameters for better low-volume audio detection
       formData.append('temperature', '0'); // Deterministic for consistency with whisper audio
-      formData.append('language', 'en'); // Force English to avoid language detection overhead
+      formData.append('language', language || 'en');
 
       if (this.dictionaryContext) {
         const promptHint = `This audio may contain these terms: ${this.dictionaryContext}`;
@@ -397,7 +399,7 @@ export class FastAssistantTranscriber {
     }
   }
 
-  private async tryPCMThenWAV(audioBuffer: Buffer, model: string, openaiKey: string): Promise<string | null> {
+  private async tryPCMThenWAV(audioBuffer: Buffer, model: string, openaiKey: string, language?: string): Promise<string | null> {
     try {
       // Try raw PCM first (more efficient)
       const formData = new FormData();
@@ -406,7 +408,7 @@ export class FastAssistantTranscriber {
 
       // Enhanced parameters for better low-volume audio detection
       formData.append('temperature', '0'); // Deterministic for consistency with whisper audio
-      formData.append('language', 'en'); // Force English to avoid language detection overhead
+      formData.append('language', language || 'en');
 
       if (this.dictionaryContext) {
         const promptHint = `This audio may contain these terms: ${this.dictionaryContext}`;
@@ -566,7 +568,7 @@ export class FastAssistantTranscriber {
   }
 
   // Smart API selection methods
-  private async transcribeWithDeepgram(audioBuffer: Buffer): Promise<{ text: string; isAssistant: boolean; model: string } | null> {
+  private async transcribeWithDeepgram(audioBuffer: Buffer, language?: string): Promise<{ text: string; isAssistant: boolean; model: string } | null> {
     try {
       const deepgramKey = await this.secureAPI.getDeepgramKey();
       if (!deepgramKey) {
@@ -577,7 +579,7 @@ export class FastAssistantTranscriber {
       const { DeepgramTranscriber } = await import('./deepgram-transcriber');
       const deepgram = new DeepgramTranscriber(deepgramKey);
       const startTime = Date.now();
-      const result = await deepgram.transcribeFromBuffer(audioBuffer);
+      const result = await deepgram.transcribeFromBuffer(audioBuffer, { language });
       Logger.info(`⏱️ [Deepgram] Transcription API call took ${Date.now() - startTime}ms`);
 
       if (result) {

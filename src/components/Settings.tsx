@@ -85,6 +85,7 @@ const Settings: React.FC = () => {
   // Audio Device Selection
   const { devices: audioDevices, loading: audioDevicesLoading } = useAudioDevices();
   const [preferredMicrophone, setPreferredMicrophone] = useState<string>('default');
+  const [transcriptionLanguage, setTranscriptionLanguage] = useState<string>('en-US');
 
   // Saving states
   const [transcriptionKeysSaving, setTranscriptionKeysSaving] = useState(false);
@@ -112,6 +113,25 @@ const Settings: React.FC = () => {
     { key: 'control', label: 'Control (⌃)', description: 'Push-to-talk - bottom left corner' },
     { key: 'command', label: 'Command (⌘)', description: 'Push-to-talk - left or right Command key' },
     { key: 'shift', label: 'Shift (⇧)', description: 'Push-to-talk - left or right Shift key' },
+  ];
+
+  const languages = [
+    { code: 'en-US', name: 'English (US)' },
+    { code: 'en-GB', name: 'English (UK)' },
+    { code: 'es', name: 'Spanish' },
+    { code: 'fr', name: 'French' },
+    { code: 'de', name: 'German' },
+    { code: 'ja', name: 'Japanese' },
+    { code: 'zh', name: 'Chinese (Mandarin)' },
+    { code: 'hi', name: 'Hindi' },
+    { code: 'pt', name: 'Portuguese' },
+    { code: 'it', name: 'Italian' },
+    { code: 'ko', name: 'Korean' },
+    { code: 'nl', name: 'Dutch' },
+    { code: 'pl', name: 'Polish' },
+    { code: 'ru', name: 'Russian' },
+    { code: 'sv', name: 'Swedish' },
+    { code: 'tr', name: 'Turkish' },
   ];
 
   // Tab configuration
@@ -205,6 +225,7 @@ const Settings: React.FC = () => {
           setUserName(appSettings.userName ?? '');
           setShowWaveform(appSettings.showWaveform ?? true);
           setPreferredMicrophone(appSettings.preferredMicrophone ?? 'default');
+          setTranscriptionLanguage(appSettings.transcriptionLanguage ?? 'en-US');
 
           // Patch: If any prompt is empty string, update settings file to use default
           const electronAPI = (window as any).electronAPI;
@@ -653,6 +674,19 @@ const Settings: React.FC = () => {
     }
   };
 
+  const handleLanguageChange = async (language: string) => {
+    setTranscriptionLanguage(language);
+    try {
+      const electronAPI = (window as any).electronAPI;
+      if (electronAPI?.appUpdateSettings) {
+        await electronAPI.appUpdateSettings({ transcriptionLanguage: language });
+        console.log('[Settings] Language changed to:', language);
+      }
+    } catch (error) {
+      console.error('[Settings] Failed to save language setting:', error);
+    }
+  };
+
   // Toggle component for reuse
   const Toggle = ({ enabled, onToggle, disabled = false }: { enabled: boolean; onToggle: () => void; disabled?: boolean }) => (
     <button
@@ -924,6 +958,43 @@ const Settings: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Language Selection - Only visible when Deepgram is enabled and Local Whisper is OFF */}
+      {deepgramApiKey && deepgramApiKey.trim() !== '' && !useLocalWhisper && (
+        <div className={`${theme.glass.primary} ${theme.radius.xl} p-6 ${theme.shadow} mb-6`}>
+          <h3 className={`text-lg font-semibold flex items-center gap-2 mb-4 ${theme.text.primary}`}>
+            <svg className="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 5h12M9 3v2m1.204 8.596C9.908 11.97 8.597 10.603 7.5 9.006M7.5 9.006C7.078 7.377 6.945 6.01 6.945 6.01M7.5 9.006L3.905 13.5M19.5 13.5l-7.5 7.5" />
+            </svg>
+            Language
+          </h3>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className={`font-medium ${theme.text.primary} mb-1`}>Transcription Language</h4>
+              <p className={`text-sm ${theme.text.tertiary}`}>Select your preferred language.</p>
+            </div>
+            <div className="relative min-w-[200px]">
+              <select
+                value={transcriptionLanguage}
+                onChange={(e) => handleLanguageChange(e.target.value)}
+                className="w-full bg-black/40 rounded-xl px-4 py-3 text-white border border-white/20 focus:border-white/40 focus:outline-none transition-colors text-sm appearance-none cursor-pointer"
+              >
+                {languages.map((lang) => (
+                  <option key={lang.code} value={lang.code} className="bg-gray-900 text-white py-2">
+                    {lang.name}
+                  </option>
+                ))}
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                <svg className="w-4 h-4 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Local Whisper */}
       <div className={`${theme.glass.primary} ${theme.radius.xl} p-6 ${theme.shadow}`}>

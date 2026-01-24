@@ -1,3 +1,4 @@
+import { AppSettingsService } from '../services/app-settings-service';
 import { Logger } from '../core/logger';
 import { DeepgramStreamingTranscriber } from './deepgram-streaming-transcriber';
 
@@ -27,7 +28,7 @@ export class StreamingTranscriptionService {
     if (this.isStreaming) {
       Logger.warning('🌊 [StreamingService] Already streaming, stopping previous session');
       await this.stopStreaming();
-      
+
       // Add a delay to ensure cleanup completes
       await new Promise(resolve => setTimeout(resolve, 100));
     }
@@ -36,10 +37,13 @@ export class StreamingTranscriptionService {
       this.onPartialText = onPartialText;
       this.onFinalText = onFinalText;
 
+      const settings = AppSettingsService.getInstance().getSettings();
+      const transcriptionLanguage = settings.transcriptionLanguage || 'en-US';
+
       // Create new streaming transcriber
       this.streamingTranscriber = new DeepgramStreamingTranscriber(apiKey, {
         model: 'nova-3',
-        language: 'en-US',
+        language: transcriptionLanguage,
         smart_format: true,
         punctuate: true,
         capitalization: true,
@@ -52,7 +56,7 @@ export class StreamingTranscriptionService {
 
       // Connect to Deepgram
       const connected = await this.streamingTranscriber.connect();
-      
+
       if (connected) {
         this.isStreaming = true;
         Logger.success('🌊 [StreamingService] Streaming session started successfully');
@@ -91,14 +95,14 @@ export class StreamingTranscriptionService {
     try {
       // Get final transcript from Deepgram
       const finalTranscript = await this.streamingTranscriber.finishStream();
-      
+
       // Notify callback
       if (this.onFinalText) {
         this.onFinalText(finalTranscript);
       }
 
       return finalTranscript;
-      
+
     } catch (error) {
       Logger.error('🌊 [StreamingService] Error finishing stream:', error);
       return this.streamingTranscriber?.getFinalTranscript() || '';
@@ -114,13 +118,13 @@ export class StreamingTranscriptionService {
     if (!this.isStreaming) return;
 
     Logger.info('🌊 [StreamingService] Stopping streaming session');
-    
+
     if (this.streamingTranscriber) {
       this.streamingTranscriber.disconnect();
     }
-    
+
     this.cleanup();
-    
+
     Logger.info('🌊 [StreamingService] Streaming session stopped');
   }
 
@@ -174,15 +178,15 @@ export class StreamingTranscriptionService {
   private cleanup(): void {
     Logger.debug('🌊 [StreamingService] Cleaning up resources');
     this.isStreaming = false;
-    
+
     if (this.streamingTranscriber) {
       this.streamingTranscriber.removeAllListeners();
       this.streamingTranscriber = null;
     }
-    
+
     this.onPartialText = undefined;
     this.onFinalText = undefined;
-    
+
     Logger.debug('🌊 [StreamingService] Cleanup completed');
   }
 }

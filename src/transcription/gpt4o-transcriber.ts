@@ -5,6 +5,7 @@ import { Logger } from '../core/logger';
 import { GoogleGenAI } from '@google/genai';
 import { createDictationPrompt, createAssistantPrompt } from '../prompts/prompt-manager';
 import { SecureAPIService } from '../services/secure-api-service';
+import { AppSettingsService } from '../services/app-settings-service';
 
 export interface GPT4oTranscribeResult {
   text: string | null;
@@ -35,12 +36,12 @@ async function postProcessForEmail(text: string): Promise<string> {
       console.log('📝 Email text looks good, skipping post-processing');
       return text;
     }
-    
+
     console.log('🔧 Applying minimal email post-processing...');
-    
+
     const secureAPI = SecureAPIService.getInstance();
     const openaiKey = await secureAPI.getOpenAIKey();
-    
+
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -70,7 +71,7 @@ async function postProcessForEmail(text: string): Promise<string> {
 
     const result = await response.json() as any;
     const processedText = result.choices?.[0]?.message?.content?.trim() || text;
-    
+
     console.log('🤖 Post-processed result:', processedText);
     return processedText;
   } catch (error) {
@@ -83,12 +84,16 @@ async function transcribeWithGPT4oMini(audioFilePath: string, dictionaryContext?
   try {
     const secureAPI = SecureAPIService.getInstance();
     const openaiKey = await secureAPI.getOpenAIKey();
-    
+
     const formData = new FormData();
     formData.append('file', fs.createReadStream(audioFilePath));
     formData.append('model', 'gpt-4o-mini-transcribe');
     formData.append('response_format', 'text');
-    
+
+    const settings = AppSettingsService.getInstance().getSettings();
+    const language = settings.transcriptionLanguage || 'en-US';
+    formData.append('language', language);
+
     // Add dictionary keywords as prompt if available (for word recognition hints)
     if (dictionaryContext) {
       // Format as recognition hints rather than instructions to avoid prompt leakage
@@ -107,7 +112,7 @@ async function transcribeWithGPT4oMini(audioFilePath: string, dictionaryContext?
     });
 
     if (!response.ok) throw new Error(`gpt-4o-mini-transcribe failed: ${response.status}`);
-    
+
     const text = await response.text();
     return text?.trim() || null;
   } catch (error) {
@@ -120,12 +125,16 @@ async function transcribeWithGPT4oTranscribe(audioFilePath: string, dictionaryCo
   try {
     const secureAPI = SecureAPIService.getInstance();
     const openaiKey = await secureAPI.getOpenAIKey();
-    
+
     const formData = new FormData();
     formData.append('file', fs.createReadStream(audioFilePath));
     formData.append('model', 'gpt-4o-transcribe');
     formData.append('response_format', 'text');
-    
+
+    const settings = AppSettingsService.getInstance().getSettings();
+    const language = settings.transcriptionLanguage || 'en-US';
+    formData.append('language', language);
+
     // Add dictionary keywords as prompt if available (for word recognition hints)
     if (dictionaryContext) {
       // Format as recognition hints rather than instructions to avoid prompt leakage
@@ -144,7 +153,7 @@ async function transcribeWithGPT4oTranscribe(audioFilePath: string, dictionaryCo
     });
 
     if (!response.ok) throw new Error(`gpt-4o-transcribe failed: ${response.status}`);
-    
+
     const text = await response.text();
     return text?.trim() || null;
   } catch (error) {
@@ -157,13 +166,16 @@ async function transcribeWithWhisper1(audioFilePath: string, dictionaryContext?:
   try {
     const secureAPI = SecureAPIService.getInstance();
     const openaiKey = await secureAPI.getOpenAIKey();
-    
+
     const formData = new FormData();
     formData.append('file', fs.createReadStream(audioFilePath));
     formData.append('model', 'whisper-1');
     formData.append('response_format', 'text');
-    formData.append('language', 'en');  // Force English language
-    
+
+    const settings = AppSettingsService.getInstance().getSettings();
+    const language = settings.transcriptionLanguage || 'en-US';
+    formData.append('language', language);
+
     // Add dictionary keywords as prompt if available (for word recognition hints)
     if (dictionaryContext) {
       // Format as recognition hints rather than instructions to avoid prompt leakage
@@ -182,7 +194,7 @@ async function transcribeWithWhisper1(audioFilePath: string, dictionaryContext?:
     });
 
     if (!response.ok) throw new Error(`whisper-1 failed: ${response.status}`);
-    
+
     const text = await response.text();
     return text?.trim() || null;
   } catch (error) {
@@ -206,7 +218,7 @@ async function transcribeWithGeminiFlashLite(audioFilePath: string, dictionaryCo
   try {
     const secureAPI = SecureAPIService.getInstance();
     const geminiApiKey = await secureAPI.getGeminiKey();
-    
+
     if (!geminiApiKey) {
       Logger.warning('Gemini API key not available');
       return null;
@@ -246,7 +258,7 @@ async function transcribeWithGeminiFlashLite(audioFilePath: string, dictionaryCo
     });
 
     if (!response.ok) throw new Error(`gemini-2.5-flash-lite failed: ${response.status}`);
-    
+
     const result = await response.json() as any;
     const text = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     return text || null;
@@ -304,12 +316,12 @@ async function transcribeWithPrompt(audioFilePath: string, prompt: string): Prom
   // Get dictionary keywords and enhance the prompt
   const { nodeDictionaryService } = await import('../services/node-dictionary');
   const dictionaryContext = nodeDictionaryService.getWordsForTranscription();
-  
+
   // Combine the original prompt with keyword hints
-  const enhancedPrompt = dictionaryContext ? 
-    `${prompt}\n\nNote: This audio may contain these terms: ${dictionaryContext}` : 
+  const enhancedPrompt = dictionaryContext ?
+    `${prompt}\n\nNote: This audio may contain these terms: ${dictionaryContext}` :
     prompt;
-  
+
   if (dictionaryContext) {
     Logger.info(`📖 [Dictionary] Enhanced prompt with keywords: ${dictionaryContext.substring(0, 50)}...`);
   }
@@ -333,11 +345,15 @@ async function transcribeWithGPT4oMiniPrompt(audioFilePath: string, prompt: stri
   try {
     const secureAPI = SecureAPIService.getInstance();
     const openaiKey = await secureAPI.getOpenAIKey();
-    
+
     const formData = new FormData();
     formData.append('file', fs.createReadStream(audioFilePath));
     formData.append('model', 'gpt-4o-mini-transcribe');
     formData.append('prompt', prompt);
+
+    const settings = AppSettingsService.getInstance().getSettings();
+    const language = settings.transcriptionLanguage || 'en-US';
+    formData.append('language', language);
 
     const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
@@ -349,7 +365,7 @@ async function transcribeWithGPT4oMiniPrompt(audioFilePath: string, prompt: stri
     });
 
     if (!response.ok) throw new Error(`GPT-4o Mini failed: ${response.status}`);
-    
+
     const result = await response.json() as any;
     return result.text?.trim() || null;
   } catch (error) {
@@ -362,11 +378,15 @@ async function transcribeWithGPT4oTranscribePrompt(audioFilePath: string, prompt
   try {
     const secureAPI = SecureAPIService.getInstance();
     const openaiKey = await secureAPI.getOpenAIKey();
-    
+
     const formData = new FormData();
     formData.append('file', fs.createReadStream(audioFilePath));
     formData.append('model', 'gpt-4o-transcribe');
     formData.append('prompt', prompt);
+
+    const settings = AppSettingsService.getInstance().getSettings();
+    const language = settings.transcriptionLanguage || 'en-US';
+    formData.append('language', language);
 
     const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
@@ -378,7 +398,7 @@ async function transcribeWithGPT4oTranscribePrompt(audioFilePath: string, prompt
     });
 
     if (!response.ok) throw new Error(`GPT-4o Transcribe failed: ${response.status}`);
-    
+
     const result = await response.json() as any;
     return result.text?.trim() || null;
   } catch (error) {
@@ -391,11 +411,14 @@ async function transcribeWithWhisper1Prompt(audioFilePath: string, prompt: strin
   try {
     const secureAPI = SecureAPIService.getInstance();
     const openaiKey = await secureAPI.getOpenAIKey();
-    
+
     const formData = new FormData();
     formData.append('file', fs.createReadStream(audioFilePath));
     formData.append('model', 'whisper-1');
-    formData.append('language', 'en');  // Force English language
+
+    const settings = AppSettingsService.getInstance().getSettings();
+    const language = settings.transcriptionLanguage || 'en-US';
+    formData.append('language', language);
     formData.append('prompt', prompt);
 
     const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
@@ -408,7 +431,7 @@ async function transcribeWithWhisper1Prompt(audioFilePath: string, prompt: strin
     });
 
     if (!response.ok) throw new Error(`Whisper-1 failed: ${response.status}`);
-    
+
     const result = await response.json() as any;
     return result.text?.trim() || null;
   } catch (error) {
