@@ -159,7 +159,9 @@ let fnKeyPressed = false;
 let spaceKeyPressed = false;
 let pendingSingleTapTimeout: NodeJS.Timeout | null = null; // For delaying single-tap processing
 let isHandsFreeModeActive = false;
+let handsFreeModeStartTime = 0; // Track when hands-free mode started to prevent accidental stops
 let pendingHandsFreeStop = false; // Prevent multiple stop requests
+let isStartingHandsFree = false; // Prevent race conditions during start sequence
 
 const DEMO_MODE = process.env.DEMO_MODE === 'true';
 
@@ -508,7 +510,7 @@ async function activateOverlaysAndShortcuts() {
     // Create overlay windows
     const waveformWin = getWaveformWindow();
     if (!waveformWin) {
-      Logger.info('♫ [Overlays] Creating waveform window...');
+      Logger.info('♫ [Overlays] Creating waveform window (initially hidden)...');
       createWaveformWindow();
     } else {
       Logger.info('♫ [Overlays] Waveform window already exists');
@@ -522,7 +524,9 @@ async function activateOverlaysAndShortcuts() {
       Logger.info('◆ [Overlays] Suggestion window already exists');
     }
 
-    // Show the waveform window only if showWaveform setting is enabled
+    // NOTE: Waveform window is now kept hidden by default to save resources
+    // It will be shown only when activated via hotkey
+    /*
     const currentSettings = appSettings.getSettings();
     const waveformWindow = getWaveformWindow();
     if (waveformWindow && currentSettings.showWaveform !== false) {
@@ -531,6 +535,7 @@ async function activateOverlaysAndShortcuts() {
     } else if (waveformWindow) {
       Logger.info('◉ [Overlays] Waveform window hidden per user settings');
     }
+    */
 
     // Register shortcuts and start monitoring
     Logger.info('⌨ [Overlays] Registering global shortcuts...');
@@ -747,6 +752,17 @@ function startHotkeyMonitoring() {
     analyticsManager,
     (level) => { waveformWindow?.webContents.send('audio-level', level); },
     (isActive) => {
+      // VISIBILITY LOGIC: Show when active
+      const win = getWaveformWindow();
+      if (win && !win.isDestroyed()) {
+          const settings = AppSettingsService.getInstance().getSettings();
+          if (isActive && settings.showWaveform !== false) {
+              win.showInactive();
+          } 
+          // Note: We don't hide immediately on inactive, we wait for transcription to complete
+          // See isTranscribing callback below
+      }
+
       // State change callback - send to both UI and tutorial screen
       Logger.debug(`Push-to-talk state changed: ${isActive ? 'active' : 'inactive'}`);
 
@@ -758,19 +774,44 @@ function startHotkeyMonitoring() {
       });
     },
     (isTranscribing) => {
+      // VISIBILITY LOGIC: Hide when transcription completes (and not active)
+      const win = getWaveformWindow();
+      if (win && !win.isDestroyed()) {
+         if (isTranscribing) {
+             // Ensure visible during transcription (e.g. if activated via other means)
+             const settings = AppSettingsService.getInstance().getSettings();
+             if (!win.isVisible() && settings.showWaveform !== false) {
+                 win.showInactive();
+             }
+             waveformWindow?.webContents.send('transcription-start');
+         } else {
+             // Transcription complete
+             waveformWindow?.webContents.send('transcription-complete');
+             
+             // Check if we should hide (not active and not transcribing)
+             // We can check pushToTalkService.active but we act on the event flow usually
+             // If we are here, isTranscribing is false.
+             // We'll add a small delay or check active state?
+             // Accessing pushToTalkService.active might be racy if it's currently initializing?
+             // But we are in the callback of the instance being created? actually the var 'pushToTalkService' is the one we are assigning to!
+             // So we can't usage 'pushToTalkService' inside its own constructor callbacks easily unless we use 'this' or rely on event loop.
+             
+             // Using setImmediate to check the assigned service variable
+             setImmediate(() => {
+                 if (pushToTalkService && !pushToTalkService.active) {
+                     Logger.info('📉 [Visibility] Hiding waveform (inactive & transcription done)');
+                     win.hide();
+                 }
+             });
+         }
+      }
+
       // Send transcription state to all windows
       BrowserWindow.getAllWindows().forEach(window => {
         if (!window.isDestroyed()) {
           window.webContents.send('transcription-state', isTranscribing);
         }
       });
-
-      // Legacy events for waveform
-      if (isTranscribing) {
-        waveformWindow?.webContents.send('transcription-start');
-      } else {
-        waveformWindow?.webContents.send('transcription-complete');
-      }
     },
     (partialText) => {
       Logger.info(`◉ [Partial] Received: "${partialText}"`);
@@ -966,8 +1007,20 @@ async function handleHotkeyDown() {
   const afterUITime = performance.now();
   Logger.debug(`⚡ [TIMING] After UI feedback: ${(afterUITime - keyDownStartTime).toFixed(2)}ms (UI took ${(afterUITime - beforeUITime).toFixed(2)}ms)`);
 
+  // 🛡️ RACE CONDITION PROTECTION: Prevent re-entry logic if we are spinning up hands-free
+  if (isStartingHandsFree) {
+    Logger.debug('🛡️ [HandsFree] Ignoring key press - hands-free startup in progress');
+    return;
+  }
+
   // ⚡ OPTIMIZATION: Skip all processing if we're already handling hands-free
   if (isHandsFreeModeActive) {
+    // 🛡️ BOUNCE PROTECTION: Ignore key presses immediately after entering hands-free mode
+    if (currentTime - handsFreeModeStartTime < 500) {
+      Logger.debug(`🛡️ [HandsFree] Ignoring key bounce/triple-tap (${currentTime - handsFreeModeStartTime}ms after start)`);
+      return;
+    }
+
     if (pendingHandsFreeStop) return; // Prevent multiple stop requests
     pendingHandsFreeStop = true;
 
@@ -1023,6 +1076,10 @@ async function handleHotkeyDown() {
   // Check for double-tap (quick second press) - adjusted timing for optimized debounce
   console.log(`🎯 [DoubleTap] Evaluating: last=${lastFnKeyTime}, current=${currentTime}, diff=${timeSinceLastPress}ms`);
   if (lastFnKeyTime > 0 && timeSinceLastPress < 1000 && timeSinceLastPress > 5) {
+    // 🛡️ PREVENT RACE: Set flags immediately before any potential async operations
+    isStartingHandsFree = true;
+    handsFreeModeStartTime = currentTime;
+
     const doubleTapDetectedTime = performance.now();
     console.log(`⚡ [TIMING] Double-tap detected at: ${(doubleTapDetectedTime - keyDownStartTime).toFixed(2)}ms`);
 
@@ -1087,6 +1144,8 @@ async function handleHotkeyDown() {
         (pushToTalkService as any).isHandsFreeMode = false;
       }
       waveformWindow?.webContents.send('dictation-stop');
+    } finally {
+      isStartingHandsFree = false; // Reset race protection flag
     }
 
     // Set dictation mode to true for hands-free mode
@@ -1190,18 +1249,49 @@ async function handleHotkeyDown() {
     // If already active, handle as cancel ONLY if we're in active recording/transcription state
     // Don't cancel if we're just in hands-free mode idle state
     if (pushToTalkService?.active || pushToTalkService?.transcribing) {
-      Logger.info('🚫 [Cancel] Function key pressed during active operation - cancelling current flow');
+      // 🎯 HANDS-FREE Logic: If in hands-free mode, a single tap should STOP gracefully, not cancel
+      if (isHandsFreeModeActive) {
+        Logger.info('🛑 [Stop] Function key pressed during hands-free - stopping gracefully');
+        
+        // Graceful stop to process transcription
+        if (pushToTalkService) {
+          pushToTalkService.stop().catch(err => {
+            Logger.error('Error stopping hands-free service:', err);
+          });
+          // Update flags immediately
+          isHandsFreeModeActive = false;
+          (pushToTalkService as any).isHandsFreeMode = false;
+        }
+        
+        setDictationMode(false);
+        waveformWindow?.webContents.send('dictation-stop');
+        
+        // Prevent `keyup` from doing anything weird by using pending flag logic if needed, 
+        // but keyup checks isHandsFreeModeActive which we just set to false...
+        // Wait, if we set isHandsFreeModeActive = false here (keydown), 
+        // then when we release the key (keyup), handleHotkeyUp will run.
+        // handleHotkeyUp checks `if (isHandsFreeModeActive ...)` -> false.
+        // Then it proceeds to `pushToTalkService.stop()`.
+        // If we already called `stop()` here in keydown, calling it again in keyup might be redundant or error-prone.
+        
+        // We probably want to tell keyup to ignore this specific release.
+        // We can use a flag `pendingHandsFreeStop`.
+        pendingHandsFreeStop = true;
+        
+      } else {
+        Logger.info('🚫 [Cancel] Function key pressed during active operation - cancelling current flow');
 
-      // Cancel the current operation immediately
-      if (pushToTalkService) {
-        pushToTalkService.hardStop();
-        pushToTalkService.active = false;
+        // Cancel the current operation immediately
+        if (pushToTalkService) {
+          pushToTalkService.hardStop();
+          pushToTalkService.active = false;
+        }
+        waveformWindow?.webContents.send('push-to-talk-cancel');
+        waveformWindow?.webContents.send('transcription-complete');
+        Logger.info('🛑 [Stop] Hard stop requested - cancelling all operations');
+        Logger.info('✅ [Stop] Hard stop completed');
+        Logger.info('🚫 [Cancel] Current operation cancelled - ready for new recording');
       }
-      waveformWindow?.webContents.send('push-to-talk-cancel');
-      waveformWindow?.webContents.send('transcription-complete');
-      Logger.info('🛑 [Stop] Hard stop requested - cancelling all operations');
-      Logger.info('✅ [Stop] Hard stop completed');
-      Logger.info('🚫 [Cancel] Current operation cancelled - ready for new recording');
     }
   }
 
@@ -1217,8 +1307,8 @@ async function handleHotkeyUp() {
 
   // 🔴 CRITICAL: Check hands-free mode FIRST before sending any stop signals!
   // In hands-free mode, releasing the key should NOT stop recording.
-  if (isHandsFreeModeActive || pendingHandsFreeStop) {
-    console.log('🎯 [HandsFree] Key released while hands-free active - NOT stopping recording');
+  if (isHandsFreeModeActive || pendingHandsFreeStop || isStartingHandsFree) {
+    console.log('🎯 [HandsFree] Key released while hands-free active/starting - NOT stopping recording');
     // Clear the pending stop flag after a delay to ensure proper cleanup
     if (pendingHandsFreeStop) {
       setTimeout(() => {
