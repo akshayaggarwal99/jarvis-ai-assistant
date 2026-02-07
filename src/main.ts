@@ -1025,20 +1025,42 @@ async function handleHotkeyDown() {
     pendingHandsFreeStop = true;
 
     Logger.info('✋ [HandsFree] Single key press in hands-free mode - stopping recording gracefully');
-    isHandsFreeModeActive = false;
+    // NOTE: We keep isHandsFreeModeActive = true until we finish stopping to prevent KeyUp from triggering
+    // isHandsFreeModeActive = false; // Moved to finally block
+
+    // Additional debug for hands-free state
+    const serviceState = pushToTalkService ? {
+      active: pushToTalkService.active,
+      transcribing: pushToTalkService.transcribing,
+      recordingStartTime: (pushToTalkService as any).recordingStartTime,
+      duration: (pushToTalkService as any).recordingStartTime ? (Date.now() - (pushToTalkService as any).recordingStartTime) : 0
+    } : 'null';
+    Logger.debug(`🔍 [HandsFree] Service state before stop: ${JSON.stringify(serviceState)}`);
 
     // If there's an active recording, stop it gracefully (not cancel)
     if (pushToTalkService && (pushToTalkService.active || pushToTalkService.transcribing)) {
       Logger.info('🛑 [HandsFree] Stopping active recording/transcription gracefully');
 
+      // 🚦 PROCESSING STATE: We are now in processing state
+      // Don't clear hands-free flags yet, let the orchestrator finish
+      
       // Stop the recording gracefully - this will trigger transcription
-      await pushToTalkService.stop();
-
-      // Clear hands-free mode flag after stopping
-      (pushToTalkService as any).isHandsFreeMode = false;
+      try {
+        await pushToTalkService.stop();
+        Logger.info('✅ [HandsFree] Service stopped successfully - transcription started');
+      } catch (err) {
+        Logger.error('❌ [HandsFree] Error stopping hands-free service:', err);
+      } finally {
+        // Clear hands-free mode flags ONLY after stop completes or fails
+        isHandsFreeModeActive = false;
+        if (pushToTalkService) {
+          (pushToTalkService as any).isHandsFreeMode = false;
+        }
+      }
     } else {
       Logger.info('💬 [HandsFree] No active recording - just exiting hands-free mode');
-      // Clear hands-free mode flag
+      // Clear hands-free mode flags
+      isHandsFreeModeActive = false;
       if (pushToTalkService) {
         (pushToTalkService as any).isHandsFreeMode = false;
       }
@@ -1099,8 +1121,10 @@ async function handleHotkeyDown() {
       waveformWindow?.webContents.send('push-to-talk-cancel');
       waveformWindow?.webContents.send('transcription-complete');
 
-      // 🔧 MINIMAL DELAY: State is now reset, 10ms is plenty for audio cleanup
-      await new Promise(resolve => setTimeout(resolve, 10));
+      // 🔧 SAFETY DELAY: Increased to 150ms to ensure MacOS audio system fully releases the microphone
+      // before we try to grab it again for hands-free mode.
+      console.log('⏳ [DoubleTap] Waiting 150ms for audio hardware release...');
+      await new Promise(resolve => setTimeout(resolve, 150));
     }
 
     // Record Jarvis usage for nudge system
@@ -1207,6 +1231,14 @@ async function handleHotkeyDown() {
   // 🔧 SMART DEBOUNCING: Delay single-tap processing to allow for double-tap
   // Start push-to-talk immediately if not already active
   if (!pushToTalkService?.active && !pushToTalkService?.transcribing) {
+    
+    // 🛡️ RE-ENTRY GUARD: Force check current state again to prevent double starts
+    if ((pushToTalkService as any)._isStarting) {
+       Logger.debug('🛡️ [Start] Ignoring concurrent start request');
+       return;
+    }
+    (pushToTalkService as any)._isStarting = true;
+
     // Start normal push-to-talk IMMEDIATELY
     Logger.debug('🔧 fn key pressed - Push-to-talk activated immediately');
     Logger.debug('🔧 ⚙ [fn] Key down event - no delay');
@@ -1238,11 +1270,14 @@ async function handleHotkeyDown() {
           Logger.error('❌ [Immediate] Failed to start push-to-talk:', error);
           // Cancel UI if audio fails
           waveformWindow?.webContents.send('push-to-talk-cancel');
+        }).finally(() => {
+           (pushToTalkService as any)._isStarting = false;
         });
       } catch (error) {
         Logger.error('❌ [Immediate] Failed to setup push-to-talk:', error);
         // Cancel UI if audio setup fails
         waveformWindow?.webContents.send('push-to-talk-cancel');
+        (pushToTalkService as any)._isStarting = false;
       }
     }
   } else {
@@ -1250,34 +1285,20 @@ async function handleHotkeyDown() {
     // Don't cancel if we're just in hands-free mode idle state
     if (pushToTalkService?.active || pushToTalkService?.transcribing) {
       // 🎯 HANDS-FREE Logic: If in hands-free mode, a single tap should STOP gracefully, not cancel
+      // NOTE: This block might be redundant because we have the dedicated check at the top of handleHotkeyDown
+      // But we keep it as a fallback for complex state edges
       if (isHandsFreeModeActive) {
-        Logger.info('🛑 [Stop] Function key pressed during hands-free - stopping gracefully');
+        Logger.info('🛑 [Stop] Function key pressed during hands-free (cleanup block) - stopping gracefully');
         
         // Graceful stop to process transcription
         if (pushToTalkService) {
-          pushToTalkService.stop().catch(err => {
-            Logger.error('Error stopping hands-free service:', err);
-          });
-          // Update flags immediately
-          isHandsFreeModeActive = false;
-          (pushToTalkService as any).isHandsFreeMode = false;
+           // We await here if we can, but this function is sync-ish. 
+           // Better to let the top block handle it.
+           Logger.debug('ℹ️ [HandsFree] Redundant stop block reached - logic should have been handled by top block');
         }
         
-        setDictationMode(false);
-        waveformWindow?.webContents.send('dictation-stop');
-        
-        // Prevent `keyup` from doing anything weird by using pending flag logic if needed, 
-        // but keyup checks isHandsFreeModeActive which we just set to false...
-        // Wait, if we set isHandsFreeModeActive = false here (keydown), 
-        // then when we release the key (keyup), handleHotkeyUp will run.
-        // handleHotkeyUp checks `if (isHandsFreeModeActive ...)` -> false.
-        // Then it proceeds to `pushToTalkService.stop()`.
-        // If we already called `stop()` here in keydown, calling it again in keyup might be redundant or error-prone.
-        
-        // We probably want to tell keyup to ignore this specific release.
-        // We can use a flag `pendingHandsFreeStop`.
-        pendingHandsFreeStop = true;
-        
+        // We do NOT stop here because the top block handles it with better locking
+        return; 
       } else {
         Logger.info('🚫 [Cancel] Function key pressed during active operation - cancelling current flow');
 
@@ -1308,7 +1329,7 @@ async function handleHotkeyUp() {
   // 🔴 CRITICAL: Check hands-free mode FIRST before sending any stop signals!
   // In hands-free mode, releasing the key should NOT stop recording.
   if (isHandsFreeModeActive || pendingHandsFreeStop || isStartingHandsFree) {
-    console.log('🎯 [HandsFree] Key released while hands-free active/starting - NOT stopping recording');
+    Logger.debug('🎯 [HandsFree] Key released while hands-free active/starting - NOT stopping recording');
     // Clear the pending stop flag after a delay to ensure proper cleanup
     if (pendingHandsFreeStop) {
       setTimeout(() => {

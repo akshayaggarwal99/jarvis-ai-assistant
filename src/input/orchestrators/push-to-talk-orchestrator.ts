@@ -138,15 +138,21 @@ export class PushToTalkOrchestrator {
       this.stateManager.startTranscription(transcriptionId, keyReleaseTime);
 
       // Stop audio recording and get session data
+      Logger.debug('🛑 [Orchestrator] Requesting audio stop...');
       const audioSessionData = this.audioManager.stopRecording();
+      Logger.debug(`📊 [Orchestrator] Audio stopped. Size: ${audioSessionData.buffer?.length || 0} bytes, Duration: ${audioSessionData.duration}ms`);
+      
       this.stateManager.updateSessionAudio(audioSessionData.buffer!, audioSessionData.duration);
 
       // Handle streaming vs traditional transcription
       const shouldUseStreaming = this.transcriptionManager.isStreamingEnabled() || this._isHandsFreeMode;
+      Logger.debug(`🔄 [Orchestrator] Flow selection: Streaming=${shouldUseStreaming}, HandsFree=${this._isHandsFreeMode}`);
 
       if (shouldUseStreaming) {
+        Logger.info('🌊 [Orchestrator] Initiating streaming flow');
         await this.handleStreamingFlow(audioSessionData, transcriptionId, keyReleaseTime);
       } else {
+        Logger.info('🎙️ [Orchestrator] Initiating traditional flow');
         await this.handleTraditionalFlow(audioSessionData, transcriptionId, keyReleaseTime);
       }
 

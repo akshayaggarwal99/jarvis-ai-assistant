@@ -238,7 +238,11 @@ public:
         std::lock_guard<std::mutex> lock(callbackMutex);
         if (callbackValid.load()) {
             try {
-                tsCallback.Release();
+                // Ensure we fully release and invalidate the thread safe function
+                // This is critical to prevent segfaults if audio data comes in late
+                if (tsCallback) {
+                     tsCallback.Release();
+                }
                 callbackValid = false;
             } catch (...) {
                 // Ignore if already released
