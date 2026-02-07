@@ -10,8 +10,12 @@ interface AppSettings {
   hotkey: string;
   aiPostProcessing: boolean;
   useDeepgramStreaming: boolean;
-  useLocalWhisper: boolean; // Use local Whisper model for offline transcription
-  localWhisperModel: string; // Selected local Whisper model (tiny.en, base.en, small.en, etc.)
+
+  // Unified Local Transcription Settings
+  useLocalModel: boolean; // General toggle for local transcription (replaces useLocalWhisper/useParakeet)
+  localModelId: string; // ID of the selected local model (Whisper or Parakeet)
+
+  downloadedParakeetModels: string[]; // List of downloaded Parakeet model IDs
   privacyConsentGiven: boolean; // User has explicitly consented to third-party data processing
   privacyConsentDate?: string; // When consent was given
   userName?: string; // User's name for email signatures
@@ -66,8 +70,12 @@ export class AppSettingsService {
       hotkey: 'fn',
       aiPostProcessing: true,
       useDeepgramStreaming: true,
-      useLocalWhisper: false, // Off by default, user can enable for offline mode
-      localWhisperModel: 'tiny.en', // Default to fastest English model
+
+      // Unified defaults
+      useLocalModel: false,
+      localModelId: 'tiny.en', // Default to Whisper Tiny (or whatever is preferred)
+
+      downloadedParakeetModels: [],
       privacyConsentGiven: false, // User must explicitly consent
       showWaveform: true, // Show waveform by default
       useOllama: false,
@@ -85,6 +93,29 @@ export class AppSettingsService {
       if (fs.existsSync(this.settingsPath)) {
         const data = fs.readFileSync(this.settingsPath, 'utf8');
         const parsed = JSON.parse(data);
+
+        // MIGRATION LOGIC
+        // Check for legacy fields and migrate to new unified fields if needed
+        if (parsed.useLocalWhisper !== undefined) {
+          if (parsed.useLocalWhisper) {
+            parsed.useLocalModel = true;
+            parsed.localModelId = parsed.localWhisperModel || 'tiny.en';
+          }
+          delete parsed.useLocalWhisper;
+          delete parsed.localWhisperModel;
+        }
+
+        if (parsed.useParakeet !== undefined) {
+          if (parsed.useParakeet) {
+            if (!parsed.useLocalModel) { // Only override if local whisper wasn't already set to true
+              parsed.useLocalModel = true;
+              parsed.localModelId = parsed.parakeetModel || 'sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8';
+            }
+          }
+          delete parsed.useParakeet;
+          delete parsed.parakeetModel;
+        }
+
         const settings = { ...this.getDefaultSettings(), ...parsed };
 
         // Migrate command key to fn key (command key is no longer supported)

@@ -351,6 +351,46 @@ export class SettingsIPCHandlers {
       }
     });
 
+    // Sherpa-ONNX model management handlers
+    ipcMain.handle('sherpa:get-downloaded-models', async () => {
+      try {
+        const { SherpaModelDownloader } = await import('../transcription/sherpa-model-downloader');
+        const downloader = new SherpaModelDownloader();
+        return downloader.getDownloadedModels();
+      } catch (error) {
+        Logger.error('[SettingsIPC] Failed to get downloaded Sherpa models:', error);
+        return [];
+      }
+    });
+
+    ipcMain.handle('sherpa:is-model-downloaded', async (_, modelId: string) => {
+      try {
+        const { SherpaModelDownloader } = await import('../transcription/sherpa-model-downloader');
+        const downloader = new SherpaModelDownloader();
+        return downloader.isModelDownloaded(modelId);
+      } catch (error) {
+        Logger.error('[SettingsIPC] Failed to check Sherpa model:', error);
+        return false;
+      }
+    });
+
+    ipcMain.handle('sherpa:download-model', async (event, modelId: string) => {
+      try {
+        const { SherpaModelDownloader } = await import('../transcription/sherpa-model-downloader');
+        const downloader = new SherpaModelDownloader();
+
+        // Send progress updates to renderer
+        const result = await downloader.downloadModel(modelId, (percent, downloadedMB, totalMB) => {
+          event.sender.send('sherpa:download-progress', { modelId, percent, downloadedMB, totalMB });
+        });
+
+        return { success: result };
+      } catch (error) {
+        Logger.error('[SettingsIPC] Failed to download Sherpa model:', error);
+        return { success: false, error: String(error) };
+      }
+    });
+
     this.handlersRegistered = true;
     Logger.info('[SettingsIPC] All handlers registered');
   }

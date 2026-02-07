@@ -42,7 +42,7 @@ This is what open source is supposed to be.
 - Fixes grammar, can rephrase, bullet-point, or even generate text
 - Tiny actions already work ("open YouTube", "set 5-min timer")
 - **Full Prompt Engineering:** Every behavior is customizable. Tweak how Jarvis formats mail, cleans dictation, or behaves as an assistant.
-- **Fully offline** with local Whisper (tiny/base/small)
+- **Fully offline** with local **Whisper** or **NVIDIA Parakeet** (via Sherpa-ONNX)
 - **100% Private, Blazingly Fast** support for local LLMs via [Ollama](https://ollama.com)
 - Or use cloud speed with Deepgram + Gemini (1M tokens/day free) — Deepgram requests default to `mip_opt_out=true`
 
@@ -67,7 +67,7 @@ This is what open source is supposed to be.
 | | **Jarvis** | The $700M one |
 |---|:---:|:---:|
 | 💰 Price | **Free forever** | $10–24/month |
-| 🔇 Offline / Local | **Yes (Whisper)** | No |
+| 🔇 Offline / Local | **Yes (Whisper + Parakeet)** | No |
 | 🔓 Open Source | **Yes (MIT)** | No |
 | 📡 Telemetry | **None** | ??? |
 | 👨‍💻 Built by | **1 guy at 2am** | VC money |
@@ -78,7 +78,8 @@ This is what open source is supposed to be.
 
 1. Download & open the app
 2. **Go Local (Recommended for privacy):**  
-   - Settings → Transcription → Enable **Local Whisper**
+   - Settings → Transcription → Enable **Local Model**
+   - Choose **Whisper** (tiny/base/small) or **Parakeet** (NVIDIA's 600M param model)
    - Settings → AI Models → Enable **Ollama** (requires [Ollama](https://ollama.com) installed)
 3. **Or Go Cloud (Recommended for speed/accuracy):**
    - Paste free Deepgram + Gemini keys
@@ -145,9 +146,11 @@ Requires Node.js 18+, macOS 10.13+, Xcode CLI tools.
 - [x] AWS Bedrock support
 - [x] Ollama support
 - [x] Custom voice commands & prompts
+- [x] iOS (TestFlight available!)
+- [x] NVIDIA Parakeet support (via Sherpa-ONNX) — blazing fast local transcription
 - [ ] Windows version
 - [ ] Clipboard magic & multi-step actions
-- [ ] iOS (yes, I dream big)
+- [ ] Streaming transcription (real-time words as you speak)
 
 Open issues, vote, or drop crazy ideas → [github.com/.../issues](https://github.com/akshayaggarwal99/jarvis-ai-assistant/issues)
 

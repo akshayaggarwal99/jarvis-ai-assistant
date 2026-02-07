@@ -8,6 +8,8 @@ import { RobustApiCaller } from '../utils/robust-api-caller';
 import { NetworkDiagnostics } from '../utils/network-diagnostics';
 import { AppSettingsService } from '../services/app-settings-service';
 import { ChunkedTranscriber, CompressedTranscriber, TranscriptionContext } from './chunked-transcriber';
+import { PARAKEET_MODELS } from './sherpa-models';
+import { WHISPER_MODELS } from './local-whisper-transcriber';
 
 export class FastAssistantTranscriber {
   private secureAPI: SecureAPIService;
@@ -159,20 +161,21 @@ export class FastAssistantTranscriber {
     // Ensure services are warmed up (usually already done in constructor)
     await this.warmUpServices();
 
-    // Check if local Whisper is enabled in settings
+    // Check if local Transcription is enabled in settings
     const settings = AppSettingsService.getInstance().getSettings();
-    Logger.info(`🎯 [FastAssistant] Settings check - useLocalWhisper: ${settings.useLocalWhisper}, localWhisperModel: ${settings.localWhisperModel}`);
+    console.log(`🎯 [FastAssistant] Settings check - useLocalModel: ${settings.useLocalModel}, localModelId: ${settings.localModelId}`);
+    Logger.info(`🎯 [FastAssistant] Settings check - useLocalModel: ${settings.useLocalModel}, localModelId: ${settings.localModelId}`);
 
-    if (settings.useLocalWhisper === true) {
-      Logger.info('🎤 [FastAssistant] Local Whisper mode enabled - using offline transcription');
+    if (settings.useLocalModel === true) {
+      Logger.info('🎤 [FastAssistant] Local model mode enabled - using offline transcription');
       try {
-        const localResult = await this.transcribeWithLocalWhisper(audioBuffer);
+        const localResult = await this.transcribeWithLocalModel(audioBuffer);
         if (localResult) {
           return localResult;
         }
-        Logger.warning('🎤 [FastAssistant] Local Whisper failed, falling back to cloud APIs');
+        Logger.warning('🎤 [FastAssistant] Local model failed, falling back to cloud APIs');
       } catch (error) {
-        Logger.warning('🎤 [FastAssistant] Local Whisper error, falling back to cloud APIs:', error);
+        Logger.warning('🎤 [FastAssistant] Local model error, falling back to cloud APIs:', error);
       }
     }
 
@@ -277,7 +280,9 @@ export class FastAssistantTranscriber {
       const geminiKey = await this.secureAPI.getGeminiKey();
       const audioBase64 = audioBuffer.toString('base64');
 
-      let transcriptionPrompt = 'Transcribe this audio accurately with proper punctuation and capitalization.';
+      console.log('⚡ [Gemini] Preparing transcription request...');
+
+      let transcriptionPrompt = 'TRANSCRIPTION TASK. DO NOT CONVERSE. OUTPUT ONLY THE EXACT TRANSCRIPT OF THE AUDIO. IF AUDIO IS SILENT OR UNINTELLIGIBLE, OUTPUT NOTHING.';
       if (this.dictionaryContext) {
         transcriptionPrompt += ` (Note: Audio may contain these terms: ${this.dictionaryContext})`;
       }
@@ -593,25 +598,56 @@ export class FastAssistantTranscriber {
   }
 
   /**
-   * Transcribe using local Whisper model (offline, no API needed)
+   * Transcribe using local model (Whisper or Sherpa/Parakeet)
    */
-  private async transcribeWithLocalWhisper(audioBuffer: Buffer): Promise<{ text: string; isAssistant: boolean; model: string } | null> {
+  private async transcribeWithLocalModel(audioBuffer: Buffer): Promise<{ text: string; isAssistant: boolean; model: string } | null> {
     try {
       const settings = AppSettingsService.getInstance().getSettings();
-      const modelId = settings.localWhisperModel || 'tiny.en';
+      const modelId = settings.localModelId || 'tiny.en';
 
-      Logger.info(`🎤 [LocalWhisper] Starting local transcription with model: ${modelId}`);
+      // Check if it's a Parakeet model (Sherpa-ONNX)
+      const isParakeet = PARAKEET_MODELS.some(m => m.id === modelId);
+      console.log(`🦜 [FastAssistant] Local model check - modelId: ${modelId}, isParakeet: ${isParakeet}`);
+
+      if (isParakeet) {
+        console.log(`🦜 [FastAssistant] Using Sherpa-ONNX model: ${modelId}`);
+        Logger.info(`🦜 [FastAssistant] Using Sherpa-ONNX model: ${modelId}`);
+
+        try {
+          console.log(`🦜 [FastAssistant] Importing sherpa-onnx-transcriber...`);
+          const { SherpaOnnxTranscriber } = await import('./sherpa-onnx-transcriber');
+          console.log(`🦜 [FastAssistant] Import successful, getting instance...`);
+          const sherpa = SherpaOnnxTranscriber.getInstance();
+          console.log(`🦜 [FastAssistant] Got instance, calling transcribeFromBuffer...`);
+
+          const result = await sherpa.transcribeFromBuffer(audioBuffer);
+          console.log(`🦜 [FastAssistant] transcribeFromBuffer returned:`, result);
+
+          if (result) {
+            return result;
+          }
+          console.log(`🦜 [FastAssistant] Sherpa returned null, falling back...`);
+          return null;
+        } catch (sherpaError) {
+          console.error(`🦜 [FastAssistant] Sherpa-ONNX error:`, sherpaError);
+          Logger.error(`🦜 [FastAssistant] Sherpa-ONNX error:`, sherpaError);
+          return null;
+        }
+      }
+
+      // Default to Whisper
+      Logger.info(`🎤 [FastAssistant] Using Local Whisper model: ${modelId}`);
       const { LocalWhisperTranscriber } = await import('./local-whisper-transcriber');
       const localWhisper = new LocalWhisperTranscriber();
 
       // Check if model is downloaded
       if (!localWhisper.isModelDownloaded(modelId)) {
-        Logger.warning(`🎤 [LocalWhisper] Model ${modelId} not downloaded, attempting download...`);
+        Logger.warning(`🎤 [FastAssistant] Model ${modelId} not downloaded, attempting download...`);
         const downloaded = await localWhisper.downloadModel(modelId, (percent, downloaded, total) => {
-          Logger.info(`🎤 [LocalWhisper] Downloading: ${percent}% (${downloaded}/${total} MB)`);
+          Logger.info(`🎤 [FastAssistant] Downloading: ${percent}% (${downloaded}/${total} MB)`);
         });
         if (!downloaded) {
-          Logger.error(`🎤 [LocalWhisper] Failed to download model ${modelId}`);
+          Logger.error(`🎤 [FastAssistant] Failed to download model ${modelId}`);
           return null;
         }
       }
@@ -623,7 +659,7 @@ export class FastAssistantTranscriber {
       }
       return null;
     } catch (error) {
-      Logger.warning('Local Whisper transcription failed:', error);
+      Logger.warning('Local model transcription failed:', error);
       return null;
     }
   }

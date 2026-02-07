@@ -755,12 +755,12 @@ function startHotkeyMonitoring() {
       // VISIBILITY LOGIC: Show when active
       const win = getWaveformWindow();
       if (win && !win.isDestroyed()) {
-          const settings = AppSettingsService.getInstance().getSettings();
-          if (isActive && settings.showWaveform !== false) {
-              win.showInactive();
-          } 
-          // Note: We don't hide immediately on inactive, we wait for transcription to complete
-          // See isTranscribing callback below
+        const settings = AppSettingsService.getInstance().getSettings();
+        if (isActive && settings.showWaveform !== false) {
+          win.showInactive();
+        }
+        // Note: We don't hide immediately on inactive, we wait for transcription to complete
+        // See isTranscribing callback below
       }
 
       // State change callback - send to both UI and tutorial screen
@@ -777,33 +777,33 @@ function startHotkeyMonitoring() {
       // VISIBILITY LOGIC: Hide when transcription completes (and not active)
       const win = getWaveformWindow();
       if (win && !win.isDestroyed()) {
-         if (isTranscribing) {
-             // Ensure visible during transcription (e.g. if activated via other means)
-             const settings = AppSettingsService.getInstance().getSettings();
-             if (!win.isVisible() && settings.showWaveform !== false) {
-                 win.showInactive();
-             }
-             waveformWindow?.webContents.send('transcription-start');
-         } else {
-             // Transcription complete
-             waveformWindow?.webContents.send('transcription-complete');
-             
-             // Check if we should hide (not active and not transcribing)
-             // We can check pushToTalkService.active but we act on the event flow usually
-             // If we are here, isTranscribing is false.
-             // We'll add a small delay or check active state?
-             // Accessing pushToTalkService.active might be racy if it's currently initializing?
-             // But we are in the callback of the instance being created? actually the var 'pushToTalkService' is the one we are assigning to!
-             // So we can't usage 'pushToTalkService' inside its own constructor callbacks easily unless we use 'this' or rely on event loop.
-             
-             // Using setImmediate to check the assigned service variable
-             setImmediate(() => {
-                 if (pushToTalkService && !pushToTalkService.active) {
-                     Logger.info('📉 [Visibility] Hiding waveform (inactive & transcription done)');
-                     win.hide();
-                 }
-             });
-         }
+        if (isTranscribing) {
+          // Ensure visible during transcription (e.g. if activated via other means)
+          const settings = AppSettingsService.getInstance().getSettings();
+          if (!win.isVisible() && settings.showWaveform !== false) {
+            win.showInactive();
+          }
+          waveformWindow?.webContents.send('transcription-start');
+        } else {
+          // Transcription complete
+          waveformWindow?.webContents.send('transcription-complete');
+
+          // Check if we should hide (not active and not transcribing)
+          // We can check pushToTalkService.active but we act on the event flow usually
+          // If we are here, isTranscribing is false.
+          // We'll add a small delay or check active state?
+          // Accessing pushToTalkService.active might be racy if it's currently initializing?
+          // But we are in the callback of the instance being created? actually the var 'pushToTalkService' is the one we are assigning to!
+          // So we can't usage 'pushToTalkService' inside its own constructor callbacks easily unless we use 'this' or rely on event loop.
+
+          // Using setImmediate to check the assigned service variable
+          setImmediate(() => {
+            if (pushToTalkService && !pushToTalkService.active) {
+              Logger.info('📉 [Visibility] Hiding waveform (inactive & transcription done)');
+              win.hide();
+            }
+          });
+        }
       }
 
       // Send transcription state to all windows
@@ -1043,7 +1043,7 @@ async function handleHotkeyDown() {
 
       // 🚦 PROCESSING STATE: We are now in processing state
       // Don't clear hands-free flags yet, let the orchestrator finish
-      
+
       // Stop the recording gracefully - this will trigger transcription
       try {
         await pushToTalkService.stop();
@@ -1231,11 +1231,11 @@ async function handleHotkeyDown() {
   // 🔧 SMART DEBOUNCING: Delay single-tap processing to allow for double-tap
   // Start push-to-talk immediately if not already active
   if (!pushToTalkService?.active && !pushToTalkService?.transcribing) {
-    
+
     // 🛡️ RE-ENTRY GUARD: Force check current state again to prevent double starts
     if ((pushToTalkService as any)._isStarting) {
-       Logger.debug('🛡️ [Start] Ignoring concurrent start request');
-       return;
+      Logger.debug('🛡️ [Start] Ignoring concurrent start request');
+      return;
     }
     (pushToTalkService as any)._isStarting = true;
 
@@ -1271,7 +1271,7 @@ async function handleHotkeyDown() {
           // Cancel UI if audio fails
           waveformWindow?.webContents.send('push-to-talk-cancel');
         }).finally(() => {
-           (pushToTalkService as any)._isStarting = false;
+          (pushToTalkService as any)._isStarting = false;
         });
       } catch (error) {
         Logger.error('❌ [Immediate] Failed to setup push-to-talk:', error);
@@ -1289,16 +1289,16 @@ async function handleHotkeyDown() {
       // But we keep it as a fallback for complex state edges
       if (isHandsFreeModeActive) {
         Logger.info('🛑 [Stop] Function key pressed during hands-free (cleanup block) - stopping gracefully');
-        
+
         // Graceful stop to process transcription
         if (pushToTalkService) {
-           // We await here if we can, but this function is sync-ish. 
-           // Better to let the top block handle it.
-           Logger.debug('ℹ️ [HandsFree] Redundant stop block reached - logic should have been handled by top block');
+          // We await here if we can, but this function is sync-ish. 
+          // Better to let the top block handle it.
+          Logger.debug('ℹ️ [HandsFree] Redundant stop block reached - logic should have been handled by top block');
         }
-        
+
         // We do NOT stop here because the top block handles it with better locking
-        return; 
+        return;
       } else {
         Logger.info('🚫 [Cancel] Function key pressed during active operation - cancelling current flow');
 
@@ -1668,6 +1668,24 @@ app.whenReady().then(async () => {
       }
     } catch (e) {
       Logger.error('🎤 [Startup] Early preload failed:', e);
+    }
+
+    // Also preload Sherpa-ONNX (Parakeet) model if configured
+    try {
+      const settings = AppSettingsService.getInstance().getSettings();
+      if (settings.useLocalModel && settings.localModelId) {
+        const { SherpaOnnxTranscriber } = await import('./transcription/sherpa-onnx-transcriber');
+        Logger.info('🦜 [Startup] Early preload: Starting Sherpa-ONNX model warmup...');
+        const sherpaTranscriber = SherpaOnnxTranscriber.getInstance();
+        const success = await sherpaTranscriber.preloadModel();
+        if (success) {
+          Logger.success(`🦜 [Startup] Early preload: Sherpa-ONNX model ready!`);
+        } else {
+          Logger.info('🦜 [Startup] Early preload: Sherpa-ONNX skipped (not a Parakeet model or not downloaded)');
+        }
+      }
+    } catch (e) {
+      Logger.error('🦜 [Startup] Early preload failed:', e);
     }
   })();
 

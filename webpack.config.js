@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const { execSync } = require('child_process');
 
 // Simple plugin to copy overlay.html and resources
 class CopyAssetsPlugin {
@@ -161,6 +162,95 @@ class CopyAssetsPlugin {
         fs.copyFileSync(suggestionSrc, suggestionDest);
       }
 
+      // Copy all sherpa-onnx related packages (including platform-specific binaries)
+      // This is CRITICAL: sherpa-onnx-node depends on sibling packages like sherpa-onnx-darwin-arm64
+      const nodeModulesDir = path.join(__dirname, 'node_modules');
+      if (fs.existsSync(nodeModulesDir)) {
+        const modules = fs.readdirSync(nodeModulesDir);
+        let copiedSherpa = false;
+        
+        modules.forEach(mod => {
+          if (mod.startsWith('sherpa-onnx-')) {
+            const src = path.join(nodeModulesDir, mod);
+            const dest = path.join(__dirname, 'dist', 'node_modules', mod);
+            
+            // Ensure parent directory exists
+            const destParent = path.dirname(dest);
+            if (!fs.existsSync(destParent)) {
+              fs.mkdirSync(destParent, { recursive: true });
+            }
+
+            this.copyDirRecursive(src, dest);
+            console.log(`✅ Copied native module: ${mod}`);
+            copiedSherpa = true;
+            
+            // Sign native files on macOS (critical for Electron)
+            if (process.platform === 'darwin') {
+              const files = fs.readdirSync(dest);
+              files.forEach(file => {
+                if (file.endsWith('.node') || file.endsWith('.dylib')) {
+                  const filePath = path.join(dest, file);
+                  try {
+                    execSync(`codesign -s - --force "${filePath}"`, { stdio: 'pipe' });
+                    console.log(`✅ Signed ${file}`);
+                  } catch (e) {
+                    console.warn(`⚠️ Failed to sign ${file}:`, e.message);
+                  }
+                }
+              });
+              
+              // Fix dylib paths to use @loader_path instead of @rpath
+              // This is critical for Electron to find the dependencies
+              if (mod === 'sherpa-onnx-darwin-arm64') {
+                try {
+                  const sherpaNode = path.join(dest, 'sherpa-onnx.node');
+                  const cApiDylib = path.join(dest, 'libsherpa-onnx-c-api.dylib');
+                  
+                  // Fix sherpa-onnx.node to find its dylibs relative to itself
+                  execSync(`install_name_tool -change @rpath/libsherpa-onnx-c-api.dylib @loader_path/libsherpa-onnx-c-api.dylib "${sherpaNode}"`, { stdio: 'pipe' });
+                  execSync(`install_name_tool -change @rpath/libonnxruntime.1.23.2.dylib @loader_path/libonnxruntime.1.23.2.dylib "${sherpaNode}"`, { stdio: 'pipe' });
+                  
+                  // Fix libsherpa-onnx-c-api.dylib to find onnxruntime relative to itself
+                  execSync(`install_name_tool -change @rpath/libonnxruntime.1.23.2.dylib @loader_path/libonnxruntime.1.23.2.dylib "${cApiDylib}"`, { stdio: 'pipe' });
+                  
+                  // Re-sign after install_name_tool changes
+                  execSync(`codesign -s - --force "${sherpaNode}"`, { stdio: 'pipe' });
+                  execSync(`codesign -s - --force "${cApiDylib}"`, { stdio: 'pipe' });
+                  
+                  console.log(`✅ Fixed dylib paths with install_name_tool`);
+                } catch (e) {
+                  console.warn(`⚠️ Failed to fix dylib paths:`, e.message);
+                }
+              }
+            }
+            
+            // Patch addon.js in sherpa-onnx-node to use absolute path
+            if (mod === 'sherpa-onnx-node') {
+              const addonJsPath = path.join(dest, 'addon.js');
+              if (fs.existsSync(addonJsPath)) {
+                let addonContent = fs.readFileSync(addonJsPath, 'utf8');
+                // Add absolute path as first option in possible_paths
+                const absoluteSherpaPath = path.join(__dirname, 'dist', 'node_modules', 'sherpa-onnx-darwin-arm64', 'sherpa-onnx.node');
+                const patchLine = `  '${absoluteSherpaPath}',`;
+                // Insert after 'const possible_paths = ['
+                if (!addonContent.includes(absoluteSherpaPath)) {
+                  addonContent = addonContent.replace(
+                    "const possible_paths = [",
+                    `const possible_paths = [\n${patchLine}`
+                  );
+                  fs.writeFileSync(addonJsPath, addonContent);
+                  console.log(`✅ Patched addon.js with absolute path`);
+                }
+              }
+            }
+          }
+        });
+
+        if (!copiedSherpa) {
+           console.warn('⚠️ No sherpa-onnx modules found in node_modules, native transcription may fail');
+        }
+      }
+
       // Copy high-res logo PNGs for menu bar icons
       const logoFiles = ['jarvis-logo.png', 'jarvis-logo-dark.png', 'jarvis-logo-light.png'];
       logoFiles.forEach(logoFile => {
@@ -269,7 +359,8 @@ module.exports = [
       'sharp': 'commonjs sharp',
       'whisper-node-addon': 'commonjs whisper-node-addon',
       'bufferutil': 'commonjs bufferutil',
-      'utf-8-validate': 'commonjs utf-8-validate'
+      'utf-8-validate': 'commonjs utf-8-validate',
+      'sherpa-onnx-node': 'commonjs sherpa-onnx-node'
     },
     node: {
       __dirname: false,

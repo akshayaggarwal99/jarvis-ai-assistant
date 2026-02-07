@@ -1,6 +1,6 @@
 {
   "name": "jarvis-ai-assistant",
-  "version": "1.1.8",
+  "version": "1.1.9",
   "description": "Jarvis - AI Assistant for Mac with voice dictation and AI capabilities",
   "main": "dist/main.js",
   "scripts": {
@@ -80,6 +80,7 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@types/ws": "^8.18.1",
+    "bufferutil": "^4.0.8",
     "canvas-confetti": "^1.9.3",
     "dotenv": "^16.5.0",
     "fastify": "^4.29.0",
@@ -92,11 +93,11 @@
     "openai": "^5.5.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "sherpa-onnx-node": "^1.12.23",
+    "utf-8-validate": "^6.0.3",
     "webpack": "^5.89.0",
     "whisper-node-addon": "^1.0.2",
     "ws": "^8.18.3",
-    "bufferutil": "^4.0.8",
-    "utf-8-validate": "^6.0.3",
     "zod": "^3.22.0"
   },
   "build": {
@@ -142,6 +143,10 @@
       {
         "from": "assets/jarvis-logo.png",
         "to": "jarvis-logo.png"
+      },
+      {
+        "from": "assets/ffmpeg",
+        "to": "ffmpeg"
       },
       {
         "from": "assets/jarvis-menubar-template.png",
@@ -197,6 +202,7 @@
       "iconSize": 80,
       "format": "UDZO",
       "writeUpdateInfo": false,
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
       "window": {
         "width": 600,
         "height": 400

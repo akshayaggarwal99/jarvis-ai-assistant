@@ -52,9 +52,9 @@ export class TranscriptionSessionManager {
       // Check if streaming is enabled in settings
       const settings = AppSettingsService.getInstance().getSettings();
 
-      // If local whisper is enabled, don't use streaming (local whisper is offline-only)
-      if (settings.useLocalWhisper) {
-        Logger.info('🌊 [Transcription] Local Whisper enabled - streaming disabled for offline mode');
+      // If local model is enabled, don't use streaming (local models are offline-only)
+      if (settings.useLocalModel) {
+        Logger.info('🌊 [Transcription] Local Model enabled - streaming disabled for offline mode');
         this.streamingControl = null;
         this.useStreamingTranscription = false;
         return;
@@ -330,11 +330,11 @@ export class TranscriptionSessionManager {
    * Also returns false if local whisper is enabled (offline mode)
    */
   isStreamingEnabled(): boolean {
-    // If local whisper is enabled, streaming is always disabled
+    // If local model is enabled, streaming is always disabled
     const settings = AppSettingsService.getInstance().getSettings();
-    Logger.info(`🔍 [Transcription] isStreamingEnabled check - useLocalWhisper: ${settings.useLocalWhisper}, useStreamingTranscription: ${this.useStreamingTranscription}`);
-    if (settings.useLocalWhisper) {
-      Logger.info('🔍 [Transcription] Local Whisper enabled - returning FALSE for streaming');
+    Logger.info(`🔍 [Transcription] isStreamingEnabled check - useLocalModel: ${settings.useLocalModel}, useStreamingTranscription: ${this.useStreamingTranscription}`);
+    if (settings.useLocalModel) {
+      Logger.info('🔍 [Transcription] Local Model enabled - returning FALSE for streaming');
       return false;
     }
     return this.useStreamingTranscription;

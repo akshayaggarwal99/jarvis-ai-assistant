@@ -155,6 +155,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('whisper:download-progress');
   },
 
+  // Sherpa-ONNX model management
+  sherpaGetDownloadedModels: () => ipcRenderer.invoke('sherpa:get-downloaded-models'),
+  sherpaIsModelDownloaded: (modelId: string) => ipcRenderer.invoke('sherpa:is-model-downloaded', modelId),
+  sherpaDownloadModel: (modelId: string) => ipcRenderer.invoke('sherpa:download-model', modelId),
+  onSherpaDownloadProgress: (callback: (data: { modelId: string; percent: number; downloadedMB: number; totalMB: number }) => void) => {
+    ipcRenderer.on('sherpa:download-progress', (_event, data) => callback(data));
+  },
+  removeSherpaDownloadProgressListener: () => {
+    ipcRenderer.removeAllListeners('sherpa:download-progress');
+  },
+
   // Sound playback methods
   playSound: (soundType: string) => ipcRenderer.invoke('play-sound', soundType),
 
@@ -165,7 +176,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Update methods
   downloadUpdate: (data: { downloadUrl: string; version: string }) => ipcRenderer.invoke('download-update', data),
-  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   restartApp: () => ipcRenderer.invoke('restart-app'),
 
   // Expose ipcRenderer for auth callbacks

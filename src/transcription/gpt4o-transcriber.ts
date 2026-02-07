@@ -229,7 +229,7 @@ async function transcribeWithGeminiFlashLite(audioFilePath: string, dictionaryCo
     const audioBase64 = audioBuffer.toString('base64');
 
     // Build transcription prompt with keyword hints
-    let transcriptionPrompt = 'Transcribe this audio accurately with proper punctuation and capitalization.';
+    let transcriptionPrompt = 'TRANSCRIPTION TASK. DO NOT CONVERSE. OUTPUT ONLY THE EXACT TRANSCRIPT OF THE AUDIO. IF AUDIO IS SILENT OR UNINTELLIGIBLE, OUTPUT NOTHING.';
     if (dictionaryContext) {
       transcriptionPrompt += ` (Note: Audio may contain these terms: ${dictionaryContext})`;
       Logger.info(`📖 [gemini-2.5-flash-lite] Using keyword hints: ${dictionaryContext.substring(0, 50)}...`);
@@ -268,13 +268,66 @@ async function transcribeWithGeminiFlashLite(audioFilePath: string, dictionaryCo
   }
 }
 
+async function transcribeWithParakeet(audioFilePath: string): Promise<string | null> {
+  try {
+    const { SherpaOnnxTranscriber } = await import('./sherpa-onnx-transcriber');
+    const { PARAKEET_MODELS } = await import('./sherpa-models');
+    const transcriber = SherpaOnnxTranscriber.getInstance();
+
+    // Check if enabled first
+    const settings = AppSettingsService.getInstance().getSettings();
+
+    // Must be enabled AND have a Parakeet model selected
+    if (!settings.useLocalModel) {
+      Logger.info('🦜 [Parakeet] Skipped: Local model disabled');
+      return null;
+    }
+
+    const modelId = settings.localModelId;
+    const isParakeet = PARAKEET_MODELS.some(m => m.id === modelId);
+
+    if (!isParakeet) {
+      Logger.info(`🦜 [Parakeet] Skipped: Selected model ${modelId} is not a Parakeet model`);
+      return null;
+    }
+
+    Logger.info(`🦜 [Parakeet] Attempting transcription with model ${modelId}...`);
+    const text = await transcriber.transcribe(audioFilePath);
+
+    if (text) {
+      Logger.info(`🦜 [Parakeet] Success: "${text.substring(0, 50)}..."`);
+      return text;
+    }
+    return null;
+  } catch (error) {
+    Logger.warning('🦜 [Parakeet] Transcription failed:', String(error));
+    return null;
+  }
+}
+
+
+
 export async function transcribeWithBestModel(audioFilePath: string): Promise<GPT4oTranscribeResult> {
   Logger.info('🎯 Starting dictation transcription with proper fallback chain');
+
   Logger.info('� [Fallback] gpt-4o-mini-transcribe → gpt-4o-transcribe → whisper-1 → gemini-2.5-flash-lite → whisper local');
 
   // Get dictionary context for enhanced prompts
   const { nodeDictionaryService } = await import('../services/node-dictionary');
   const dictionaryContext = nodeDictionaryService.getWordsForTranscription();
+
+  const settings = AppSettingsService.getInstance().getSettings();
+
+  // Step 0: Try Local Model (if enabled and compatible)
+  if (settings.useLocalModel) {
+    Logger.info('🚀 [Step 0] Trying Local Model (Parakeet check)...');
+    const result = await transcribeWithParakeet(audioFilePath);
+    if (result) {
+      Logger.info('✅ [Step 0] Success with Local Model');
+      return { text: result };
+    }
+    Logger.warning('⚠️ [Step 0] Local Model failed or not Parakeet, falling back to cloud models');
+  }
 
   // Step 1: Try gpt-4o-mini-transcribe
   Logger.info('🚀 [Step 1] Trying gpt-4o-mini-transcribe...');

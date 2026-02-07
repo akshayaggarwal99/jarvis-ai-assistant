@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { theme, themeComponents } from '../styles/theme';
 import { defaultDictationPrompt, defaultEmailFormattingPrompt, defaultAssistantPrompt } from '../prompts/prompts';
 import { useAudioDevices } from '../hooks/useAudioDevices';
+import { PARAKEET_MODELS } from '../transcription/sherpa-models';
 
 // Tab types
 type SettingsTab = 'general' | 'transcription' | 'ai-models' | 'prompts' | 'system';
@@ -37,10 +38,31 @@ const Settings: React.FC = () => {
   const [audioFeedback, setAudioFeedback] = useState(false);
   const [showOnStartup, setShowOnStartup] = useState(false);
   const [aiPostProcessing, setAiPostProcessing] = useState(true);
-  const [useLocalWhisper, setUseLocalWhisper] = useState(false);
-  const [localWhisperModel, setLocalWhisperModel] = useState('tiny.en');
+  const [useLocalModel, setUseLocalModel] = useState(false);
+  const [localModelId, setLocalModelId] = useState('tiny.en');
+  // const [useParakeet, setUseParakeet] = useState(false); // Deprecated
+  // const [parakeetModel, setParakeetModel] = useState(PARAKEET_MODELS[0].id); // Deprecated
+  const [downloadedParakeetModels, setDownloadedParakeetModels] = useState<string[]>([]);
+  const [downloadingParakeet, setDownloadingParakeet] = useState<string | null>(null);
+  const [parakeetDownloadProgress, setParakeetDownloadProgress] = useState<number>(0);
   const [userName, setUserName] = useState('');
   const [showWaveform, setShowWaveform] = useState(true);
+
+  // Load downloaded Sherpa models on mount
+  useEffect(() => {
+    const checkDownloadedModels = async () => {
+      const electronAPI = (window as any).electronAPI;
+      if (electronAPI?.sherpaGetDownloadedModels) {
+        try {
+          const models = await electronAPI.sherpaGetDownloadedModels();
+          setDownloadedParakeetModels(models);
+        } catch (error) {
+          console.error('Failed to get downloaded Sherpa models:', error);
+        }
+      }
+    };
+    checkDownloadedModels();
+  }, []);
 
   // Custom Prompts
   const [customDictationPrompt, setCustomDictationPrompt] = useState('');
@@ -198,7 +220,7 @@ const Settings: React.FC = () => {
   useEffect(() => {
     const fetchVersion = async () => {
       try {
-        const version = await window.electronAPI.getAppVersion();
+        const version = await (window as any).electronAPI.getAppVersion();
         setAppVersion(version);
       } catch (error) {
         console.error('Failed to fetch app version:', error);
@@ -220,8 +242,12 @@ const Settings: React.FC = () => {
           setAudioFeedback(appSettings.audioFeedback);
           setShowOnStartup(appSettings.showOnStartup);
           setAiPostProcessing(appSettings.aiPostProcessing);
-          setUseLocalWhisper(appSettings.useLocalWhisper ?? false);
-          setLocalWhisperModel(appSettings.localWhisperModel ?? 'tiny.en');
+          setAiPostProcessing(appSettings.aiPostProcessing);
+          setUseLocalModel(appSettings.useLocalModel ?? false);
+          setLocalModelId(appSettings.localModelId ?? 'tiny.en');
+          // setUseParakeet(appSettings.useParakeet ?? false); // Legacy support handled in migration
+          // setParakeetModel(appSettings.parakeetModel || PARAKEET_MODELS[0].id);
+          setDownloadedParakeetModels(appSettings.downloadedParakeetModels || []);
           setUserName(appSettings.userName ?? '');
           setShowWaveform(appSettings.showWaveform ?? true);
           setPreferredMicrophone(appSettings.preferredMicrophone ?? 'default');
@@ -394,70 +420,138 @@ const Settings: React.FC = () => {
     }
   };
 
-  const handleLocalWhisperToggle = async () => {
+  const handleLocalModelToggle = async () => {
     try {
       setIsSaving(true);
-      const newValue = !useLocalWhisper;
+      const newValue = !useLocalModel;
       const electronAPI = (window as any).electronAPI;
 
       if (electronAPI && electronAPI.appUpdateSettings) {
-        await electronAPI.appUpdateSettings({ useLocalWhisper: newValue });
-        setUseLocalWhisper(newValue);
+        await electronAPI.appUpdateSettings({ useLocalModel: newValue });
+        setUseLocalModel(newValue);
       }
     } catch (error) {
-      console.error('Failed to update local Whisper settings:', error);
+      console.error('Failed to update local model settings:', error);
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleLocalWhisperModelChange = async (modelId: string) => {
+  const handleLocalModelChange = async (modelId: string) => {
     try {
       const electronAPI = (window as any).electronAPI;
 
-      // Check if model is already downloaded
-      const isDownloaded = downloadedModels.includes(modelId);
+      // Determine model type
+      const isParakeet = PARAKEET_MODELS.some(m => m.id === modelId);
+      const isWhisper = WHISPER_MODELS.some(m => m.id === modelId);
 
-      if (!isDownloaded && electronAPI?.whisperDownloadModel) {
-        // Start downloading
-        setDownloadingModel(modelId);
-        setDownloadProgress(0);
+      console.log(`[Settings] Model changed to ${modelId} (Parakeet: ${isParakeet}, Whisper: ${isWhisper})`);
 
-        // Set up progress listener
-        electronAPI.onWhisperDownloadProgress?.((data: { modelId: string; percent: number }) => {
-          if (data.modelId === modelId) {
-            setDownloadProgress(data.percent);
-          }
-        });
-
-        // Download the model
-        const result = await electronAPI.whisperDownloadModel(modelId);
-
-        // Clean up listener
-        electronAPI.removeWhisperDownloadProgressListener?.();
-
-        if (!result?.success) {
-          console.error('Failed to download model');
-          setDownloadingModel(null);
-          return;
-        }
-
-        // Update downloaded models list
-        setDownloadedModels(prev => [...prev, modelId]);
-        setDownloadingModel(null);
+      // Check if downloaded
+      let isDownloaded = false;
+      if (isParakeet) {
+        isDownloaded = downloadedParakeetModels.includes(modelId);
+      } else if (isWhisper) {
+        isDownloaded = downloadedModels.includes(modelId);
       }
 
-      // Save the model selection
+      // Save selection first
       setIsSaving(true);
       if (electronAPI?.appUpdateSettings) {
-        await electronAPI.appUpdateSettings({ localWhisperModel: modelId });
-        setLocalWhisperModel(modelId);
+        await electronAPI.appUpdateSettings({ localModelId: modelId });
+        setLocalModelId(modelId);
       }
+
+      // Trigger download if needed - but maybe let user click download?
+      // Existing Whisper behavior was auto-download. Existing Parakeet was manual.
+      // Let's stick to manual download for now to be safe, but show a clear button.
+      // OR, since we are selecting it, we likely want to use it.
+      // Let's AUTO-DOWNLOAD if it's Whisper (legacy behavior) but maybe manual for Parakeet (larger?)
+      // Actually, Parakeet models are ~200MB, Whisper Small is ~466MB.
+      // Let's just update the state and let the UI show the "Download" button if needed.
+
     } catch (error) {
-      console.error('Failed to update local Whisper model:', error);
-      setDownloadingModel(null);
+      console.error('Failed to update local model:', error);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleDownloadModel = async (modelId: string) => {
+    const isParakeet = PARAKEET_MODELS.some(m => m.id === modelId);
+
+    if (isParakeet) {
+      await handleDownloadParakeetModel(modelId);
+    } else {
+      await handleDownloadWhisperModel(modelId);
+    }
+  };
+
+  const handleDownloadWhisperModel = async (modelId: string) => {
+    const electronAPI = (window as any).electronAPI;
+    if (!electronAPI?.whisperDownloadModel) return;
+
+    setDownloadingModel(modelId);
+    setDownloadProgress(0);
+
+    try {
+      electronAPI.onWhisperDownloadProgress?.((data: { modelId: string; percent: number }) => {
+        if (data.modelId === modelId) setDownloadProgress(data.percent);
+      });
+
+      const result = await electronAPI.whisperDownloadModel(modelId);
+
+      electronAPI.removeWhisperDownloadProgressListener?.();
+
+      if (result?.success) {
+        setDownloadedModels(prev => [...prev, modelId]);
+      } else {
+        console.error('Failed to download Whisper model');
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setDownloadingModel(null);
+    }
+  };
+
+  const handleDownloadParakeetModel = async (modelId: string) => {
+    const model = PARAKEET_MODELS.find(m => m.id === modelId);
+    if (!model) return;
+
+    setDownloadingParakeet(modelId);
+    setParakeetDownloadProgress(0);
+    const electronAPI = (window as any).electronAPI;
+
+    try {
+      if (electronAPI?.onSherpaDownloadProgress) {
+        electronAPI.onSherpaDownloadProgress(({ percent }: { percent: number }) => {
+          setParakeetDownloadProgress(percent);
+        });
+      }
+
+      if (electronAPI?.sherpaDownloadModel) {
+        const result = await electronAPI.sherpaDownloadModel(modelId);
+
+        if (result && result.success) {
+          const currentDownloaded = downloadedParakeetModels || [];
+          if (!currentDownloaded.includes(modelId)) {
+            const newDownloaded = [...currentDownloaded, modelId];
+            setDownloadedParakeetModels(newDownloaded);
+            if (electronAPI.appUpdateSettings) {
+              await electronAPI.appUpdateSettings({ downloadedParakeetModels: newDownloaded });
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to download model:', error);
+    } finally {
+      if (electronAPI?.removeSherpaDownloadProgressListener) {
+        electronAPI.removeSherpaDownloadProgressListener();
+      }
+      setDownloadingParakeet(null);
+      setParakeetDownloadProgress(0);
     }
   };
 
@@ -959,8 +1053,8 @@ const Settings: React.FC = () => {
         </div>
       </div>
 
-      {/* Language Selection - Only visible when Deepgram is enabled and Local Whisper is OFF */}
-      {deepgramApiKey && deepgramApiKey.trim() !== '' && !useLocalWhisper && (
+      {/* Language Selection - Only visible when Deepgram is enabled and Local Transcription is OFF */}
+      {deepgramApiKey && deepgramApiKey.trim() !== '' && !useLocalModel && (
         <div className={`${theme.glass.primary} ${theme.radius.xl} p-6 ${theme.shadow} mb-6`}>
           <h3 className={`text-lg font-semibold flex items-center gap-2 mb-4 ${theme.text.primary}`}>
             <svg className="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -996,13 +1090,13 @@ const Settings: React.FC = () => {
         </div>
       )}
 
-      {/* Local Whisper */}
+      {/* Local Transcription (Unified) */}
       <div className={`${theme.glass.primary} ${theme.radius.xl} p-6 ${theme.shadow}`}>
         <h3 className={`font-medium ${theme.text.primary} mb-6 flex items-center gap-2`}>
           <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
           </svg>
-          Local Whisper
+          Local Transcription
           <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-purple-500/10 text-purple-400 rounded-md border border-purple-500/20">
             Offline
           </span>
@@ -1011,48 +1105,46 @@ const Settings: React.FC = () => {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h4 className={`font-medium ${theme.text.primary} mb-1`}>Use Local Whisper</h4>
-              <p className={`text-sm ${theme.text.tertiary}`}>100% private, works offline. No API key needed.</p>
+              <h4 className={`font-medium ${theme.text.primary} mb-1`}>Enable Local Transcription</h4>
+              <p className={`text-sm ${theme.text.tertiary}`}>100% private, works offline. Select a model below.</p>
             </div>
-            <Toggle enabled={useLocalWhisper} onToggle={handleLocalWhisperToggle} />
+            <Toggle enabled={useLocalModel} onToggle={handleLocalModelToggle} />
           </div>
 
-          {useLocalWhisper && (
+          {useLocalModel && (
             <div className={`${theme.glass.secondary} rounded-lg p-4 border border-white/5 mt-3`}>
               <label className={`block text-sm font-medium ${theme.text.primary} mb-2`}>
-                Whisper Model
+                Select Model
               </label>
 
-              {downloadingModel && (
-                <div className="mb-3">
-                  <div className="flex justify-between text-xs text-white/60 mb-1">
-                    <span>Downloading {WHISPER_MODELS.find(m => m.id === downloadingModel)?.name}...</span>
-                    <span>{downloadProgress}%</span>
-                  </div>
-                  <div className="h-2 bg-black/40 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 transition-all duration-300"
-                      style={{ width: `${downloadProgress}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="relative">
+              {/* Combined Dropdown */}
+              <div className="relative mb-4">
                 <select
-                  value={localWhisperModel}
-                  onChange={(e) => handleLocalWhisperModelChange(e.target.value)}
-                  disabled={!!downloadingModel}
-                  className={`w-full bg-black/40 rounded-xl px-4 py-3 text-white border border-white/20 focus:border-white/40 focus:outline-none transition-colors text-sm appearance-none ${downloadingModel ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                  value={localModelId}
+                  onChange={(e) => handleLocalModelChange(e.target.value)}
+                  disabled={!!downloadingModel || !!downloadingParakeet}
+                  className={`w-full bg-black/40 rounded-xl px-4 py-3 text-white border border-white/20 focus:border-white/40 focus:outline-none transition-colors text-sm appearance-none cursor-pointer ${downloadingModel || downloadingParakeet ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
-                  {WHISPER_MODELS.map((model) => {
-                    const isDownloaded = downloadedModels.includes(model.id);
-                    return (
-                      <option key={model.id} value={model.id} className="bg-gray-900 text-white py-2">
-                        {model.name} - {model.size} ({model.speed}) {isDownloaded ? '✓' : '↓'}
-                      </option>
-                    );
-                  })}
+                  <optgroup label="Whisper (Standard)">
+                    {WHISPER_MODELS.map((model) => {
+                      const isDownloaded = downloadedModels.includes(model.id);
+                      return (
+                        <option key={model.id} value={model.id} className="bg-gray-900 text-white">
+                          {model.name} ({model.size}) - {isDownloaded ? '✓ Ready' : '↓ Download Needed'}
+                        </option>
+                      );
+                    })}
+                  </optgroup>
+                  <optgroup label="Sherpa/Parakeet (High Accuracy)">
+                    {PARAKEET_MODELS.map((model) => {
+                      const isDownloaded = downloadedParakeetModels.includes(model.id);
+                      return (
+                        <option key={model.id} value={model.id} className="bg-gray-900 text-white">
+                          {model.name} ({model.size}) - {isDownloaded ? '✓ Ready' : '↓ Download Needed'}
+                        </option>
+                      );
+                    })}
+                  </optgroup>
                 </select>
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
                   <svg className="w-4 h-4 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1060,8 +1152,63 @@ const Settings: React.FC = () => {
                   </svg>
                 </div>
               </div>
-              <p className={`text-xs ${theme.text.tertiary} mt-2`}>
-                ✓ = downloaded, ↓ = needs download. Smaller models are faster but less accurate.
+
+              {/* Status / Download Button */}
+              {(() => {
+                const isParakeet = PARAKEET_MODELS.some(m => m.id === localModelId);
+                const isWhisper = WHISPER_MODELS.some(m => m.id === localModelId);
+
+                let isDownloaded = false;
+                if (isParakeet) isDownloaded = downloadedParakeetModels.includes(localModelId);
+                if (isWhisper) isDownloaded = downloadedModels.includes(localModelId);
+
+                const isDownloading = (isParakeet && downloadingParakeet === localModelId) || (isWhisper && downloadingModel === localModelId);
+                const currentProgress = isParakeet ? parakeetDownloadProgress : downloadProgress;
+
+                return (
+                  <div className="mt-2 text-sm">
+                    {isDownloading ? (
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-xs text-blue-300">
+                          <span>Downloading model...</span>
+                          <span>{currentProgress}%</span>
+                        </div>
+                        <div className="w-full bg-black/40 rounded-full h-1.5 overflow-hidden">
+                          <div
+                            className="bg-blue-500 h-full rounded-full transition-all duration-300 ease-out"
+                            style={{ width: `${currentProgress}%` }}
+                          />
+                        </div>
+                      </div>
+                    ) : !isDownloaded ? (
+                      <div className="flex items-center justify-between bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
+                        <div className="flex gap-2 items-center">
+                          <svg className="w-4 h-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                          <span className="text-amber-200 text-xs">Model not installed</span>
+                        </div>
+                        <button
+                          onClick={() => handleDownloadModel(localModelId)}
+                          className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded-md transition-colors"
+                        >
+                          Download Now
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-green-400 text-xs mt-2">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        Model ready to use
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              <p className={`text-xs ${theme.text.tertiary} mt-3`}>
+                Whisper models are general-purpose. Parakeet models (Sherpa-ONNX) offer higher accuracy but may be larger.
               </p>
             </div>
           )}
@@ -1386,6 +1533,8 @@ const Settings: React.FC = () => {
           </div>
         </div>
       </div>
+
+
 
       {/* AWS Bedrock */}
       <div className={`${theme.glass.primary} ${theme.radius.xl} p-6 ${theme.shadow}`}>
