@@ -26,6 +26,7 @@ export class PushToTalkOrchestrator {
   private feedbackService = UserFeedbackService.getInstance();
   private options: PushToTalkOptions;
   private _isHandsFreeMode: boolean = false;
+  private streamingInterval: NodeJS.Timeout | null = null;
 
   constructor(analyticsManager: OptimizedAnalyticsManager, options: PushToTalkOptions = {}) {
     this.analyticsManager = analyticsManager;
@@ -102,6 +103,11 @@ export class PushToTalkOrchestrator {
         backgroundTasks.catch(error => {
           Logger.warning('⚠️ [Orchestrator] Some background tasks failed (audio recording continues):', error);
         });
+
+        // Start streaming pumper if enabled
+        if (this.transcriptionManager.isStreamingEnabled() || this._isHandsFreeMode) {
+          this.startStreamingPumper();
+        }
       });
 
     } catch (error) {
@@ -141,7 +147,7 @@ export class PushToTalkOrchestrator {
       Logger.debug('🛑 [Orchestrator] Requesting audio stop...');
       const audioSessionData = this.audioManager.stopRecording();
       Logger.debug(`📊 [Orchestrator] Audio stopped. Size: ${audioSessionData.buffer?.length || 0} bytes, Duration: ${audioSessionData.duration}ms`);
-      
+
       this.stateManager.updateSessionAudio(audioSessionData.buffer!, audioSessionData.duration);
 
       // Handle streaming vs traditional transcription
@@ -527,9 +533,39 @@ export class PushToTalkOrchestrator {
   }
 
   /**
+   * Start periodic pumping of audio chunks to streaming transcription
+   */
+  private startStreamingPumper(): void {
+    this.stopStreamingPumper();
+    Logger.debug('🌊 [Orchestrator] Starting streaming pumper');
+
+    this.streamingInterval = setInterval(() => {
+      if (this.stateManager.isActive()) {
+        const chunkCount = this.audioManager.getChunkCount();
+        const chunks = this.audioManager.getAudioChunks();
+        this.transcriptionManager.sendAudioToStream(chunks, chunkCount);
+      } else {
+        this.stopStreamingPumper();
+      }
+    }, 200); // 200ms interval for balanced performance
+  }
+
+  /**
+   * Stop the streaming pumper
+   */
+  private stopStreamingPumper(): void {
+    if (this.streamingInterval) {
+      clearInterval(this.streamingInterval);
+      this.streamingInterval = null;
+      Logger.debug('🌊 [Orchestrator] Stopped streaming pumper');
+    }
+  }
+
+  /**
    * Cleanup all resources
    */
   async cleanup(): Promise<void> {
+    this.stopStreamingPumper();
     await this.cancel();
     await this.transcriptionManager.cleanup();
     this.outputManager.stopCorrectionMonitoring();
