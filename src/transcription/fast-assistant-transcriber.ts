@@ -677,16 +677,6 @@ export class FastAssistantTranscriber {
     const { AppSettingsService } = await import('../services/app-settings-service');
     const settings = AppSettingsService.getInstance().getSettings();
 
-    if (settings.useLocalModel && settings.useLocalStreaming) {
-      Logger.info('🌊 [Streaming] Local streaming enabled - routing to SherpaOnnxTranscriber');
-      try {
-        const { SherpaOnnxTranscriber } = await import('./sherpa-onnx-transcriber');
-        return SherpaOnnxTranscriber.getInstance().startStreamingTranscription(onPartialText, onComplete);
-      } catch (error) {
-        Logger.error('🌊 [Streaming] Failed to start local streaming, falling back:', error);
-      }
-    }
-
     if (!settings.useDeepgramStreaming) {
       Logger.info('🌊 [Streaming] Deepgram streaming disabled, returning null');
       return null;

@@ -26,9 +26,6 @@ import { TranscriptionService } from './services/transcription-service';
 import { AppLifecycleService } from './services/app-lifecycle-service';
 import { StartupOptimizer } from './services/startup-optimizer';
 import { LocalWhisperTranscriber } from './transcription/local-whisper-transcriber';
-import { SherpaOnnxTranscriber } from './transcription/sherpa-onnx-transcriber';
-import { PARAKEET_MODELS } from './transcription/sherpa-models';
-import { WHISPER_MODELS } from './components/Settings'; // Adjust if models move
 
 // Load environment variables with multiple fallback paths
 // Remove hardcoded fallback - keys must come from secure service
@@ -251,31 +248,22 @@ async function initializeJarvis() {
     // Set up global listeners
     setupGlobalListeners();
 
-    // Preload Local model for faster transcription (Sherpa or Whisper)
-    const appSettingsInstance = AppSettingsService.getInstance();
-    const currentSettings = appSettingsInstance.getSettings();
-    if (currentSettings.useLocalModel && currentSettings.localModelId) {
-      const isWhisper = WHISPER_MODELS.some(m => m.id === currentSettings.localModelId);
-      const isSherpa = PARAKEET_MODELS.some(m => m.id === currentSettings.localModelId);
-
-      if (isWhisper) {
-        const whisperTranscriber = new LocalWhisperTranscriber();
-        whisperTranscriber.preloadModel(currentSettings.localModelId).then(success => {
-          if (success) {
-            Logger.success(`🎤 Whisper model '${currentSettings.localModelId}' preloaded for fast transcription`);
-          } else {
-            Logger.info('🎤 Whisper model preload skipped (model not downloaded)');
-          }
-        }).catch(err => {
-          Logger.error('🎤 Failed to preload Whisper model:', err);
-        });
-      } else if (isSherpa) {
-        SherpaOnnxTranscriber.getInstance().preloadModel().catch(err => {
-          Logger.error('🎤 Failed to preload Sherpa model:', err);
-        });
-      }
+    // Preload Whisper model for faster transcription (runs in background)
+    const appSettingsForWhisper = AppSettingsService.getInstance();
+    const whisperSettings = appSettingsForWhisper.getSettings();
+    if (whisperSettings.useLocalWhisper && whisperSettings.localWhisperModel) {
+      const whisperTranscriber = new LocalWhisperTranscriber();
+      whisperTranscriber.preloadModel(whisperSettings.localWhisperModel).then(success => {
+        if (success) {
+          Logger.success(`🎤 Whisper model '${whisperSettings.localWhisperModel}' preloaded for fast transcription`);
+        } else {
+          Logger.info('🎤 Whisper model preload skipped (model not downloaded)');
+        }
+      }).catch(err => {
+        Logger.error('🎤 Failed to preload Whisper model:', err);
+      });
     } else {
-      Logger.info('🎤 Local model preload skipped (local transcription disabled or no model selected)');
+      Logger.info('🎤 Whisper preload skipped (local transcription disabled or no model selected)');
     }
   } catch (error) {
     Logger.error('Failed to initialize Jarvis Core:', error);
@@ -756,8 +744,8 @@ function startHotkeyMonitoring() {
   Logger.info(`⚙ [Hotkey] Current hotkey from settings: ${currentHotkey}`);
 
   // Calculate if streaming should be enabled
-  const shouldUseStreaming = allSettings.useDeepgramStreaming || (allSettings.useLocalModel && allSettings.useLocalStreaming);
-  Logger.info(`⚙ [Hotkey] Streaming decision: useDeepgramStreaming=${allSettings.useDeepgramStreaming}, useLocalModel=${allSettings.useLocalModel}, shouldUseStreaming=${shouldUseStreaming}`);
+  const shouldUseStreaming = allSettings.useDeepgramStreaming && !allSettings.useLocalWhisper;
+  Logger.info(`⚙ [Hotkey] Streaming decision: useDeepgramStreaming=${allSettings.useDeepgramStreaming}, useLocalWhisper=${allSettings.useLocalWhisper}, shouldUseStreaming=${shouldUseStreaming}`);
 
   // Initialize push-to-talk service (same for all keys)
   pushToTalkService = new PushToTalkService(
@@ -1663,33 +1651,41 @@ app.whenReady().then(async () => {
   // Create menu bar tray
   createMenuBarTray();
 
-  // EARLY LOCAL MODEL PRELOAD: Start loading the model ASAP
+  // EARLY WHISPER PRELOAD: Start loading the Metal library and model ASAP
+  // This runs in background so first transcription is fast
   (async () => {
     try {
-      const settings = AppSettingsService.getInstance().getSettings();
-      if (settings.useLocalModel && settings.localModelId) {
-        const isWhisper = WHISPER_MODELS.some(m => m.id === settings.localModelId);
-        const isSherpa = PARAKEET_MODELS.some(m => m.id === settings.localModelId);
-
-        if (isWhisper) {
-          Logger.info('🎤 [Startup] Early preload: Starting whisper model warmup...');
-          const whisperTranscriber = new LocalWhisperTranscriber();
-          const success = await whisperTranscriber.preloadModel(settings.localModelId);
-          if (success) {
-            Logger.success(`🎤 [Startup] Early preload: Whisper model '${settings.localModelId}' ready!`);
-          }
-        } else if (isSherpa) {
-          const { SherpaOnnxTranscriber } = await import('./transcription/sherpa-onnx-transcriber');
-          Logger.info('🦜 [Startup] Early preload: Starting Sherpa-ONNX model warmup...');
-          const sherpaTranscriber = SherpaOnnxTranscriber.getInstance();
-          const success = await sherpaTranscriber.preloadModel();
-          if (success) {
-            Logger.success(`🦜 [Startup] Early preload: Sherpa-ONNX model ready!`);
-          }
+      const whisperSettings = AppSettingsService.getInstance().getSettings();
+      if (whisperSettings.useLocalWhisper && whisperSettings.localWhisperModel) {
+        Logger.info('🎤 [Startup] Early preload: Starting whisper model warmup...');
+        const whisperTranscriber = new LocalWhisperTranscriber();
+        const success = await whisperTranscriber.preloadModel(whisperSettings.localWhisperModel);
+        if (success) {
+          Logger.success(`🎤 [Startup] Early preload: Whisper model '${whisperSettings.localWhisperModel}' ready!`);
+        } else {
+          Logger.info('🎤 [Startup] Early preload: Model not downloaded, skipping');
         }
       }
     } catch (e) {
       Logger.error('🎤 [Startup] Early preload failed:', e);
+    }
+
+    // Also preload Sherpa-ONNX (Parakeet) model if configured
+    try {
+      const settings = AppSettingsService.getInstance().getSettings();
+      if (settings.useLocalModel && settings.localModelId) {
+        const { SherpaOnnxTranscriber } = await import('./transcription/sherpa-onnx-transcriber');
+        Logger.info('🦜 [Startup] Early preload: Starting Sherpa-ONNX model warmup...');
+        const sherpaTranscriber = SherpaOnnxTranscriber.getInstance();
+        const success = await sherpaTranscriber.preloadModel();
+        if (success) {
+          Logger.success(`🦜 [Startup] Early preload: Sherpa-ONNX model ready!`);
+        } else {
+          Logger.info('🦜 [Startup] Early preload: Sherpa-ONNX skipped (not a Parakeet model or not downloaded)');
+        }
+      }
+    } catch (e) {
+      Logger.error('🦜 [Startup] Early preload failed:', e);
     }
   })();
 

@@ -14,8 +14,6 @@ interface AppSettings {
   // Unified Local Transcription Settings
   useLocalModel: boolean; // General toggle for local transcription (replaces useLocalWhisper/useParakeet)
   localModelId: string; // ID of the selected local model (Whisper or Parakeet)
-  useLocalStreaming: boolean; // Whether to use streaming for local models
-  localStreamingModelId: string; // ID of the model to use for local streaming
 
   downloadedParakeetModels: string[]; // List of downloaded Parakeet model IDs
   privacyConsentGiven: boolean; // User has explicitly consented to third-party data processing
@@ -75,9 +73,7 @@ export class AppSettingsService {
 
       // Unified defaults
       useLocalModel: false,
-      localModelId: 'tiny.en', // Default to Whisper Tiny
-      useLocalStreaming: true,
-      localStreamingModelId: 'sherpa-onnx-streaming-zipformer-en-2023-06-26',
+      localModelId: 'tiny.en', // Default to Whisper Tiny (or whatever is preferred)
 
       downloadedParakeetModels: [],
       privacyConsentGiven: false, // User must explicitly consent

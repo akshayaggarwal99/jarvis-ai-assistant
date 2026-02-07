@@ -52,22 +52,21 @@ export class TranscriptionSessionManager {
       // Check if streaming is enabled in settings
       const settings = AppSettingsService.getInstance().getSettings();
 
-      // If local model is enabled, check if local streaming is enabled
+      // If local model is enabled, don't use streaming (local models are offline-only)
       if (settings.useLocalModel) {
-        if (!settings.useLocalStreaming) {
-          Logger.info('🌊 [Transcription] Local Model enabled but Local Streaming disabled');
-          this.streamingControl = null;
-          this.useStreamingTranscription = false;
-          return;
-        }
-        Logger.info('🌊 [Transcription] Initializing Local streaming transcription...');
-      } else if (!settings.useDeepgramStreaming) {
+        Logger.info('🌊 [Transcription] Local Model enabled - streaming disabled for offline mode');
+        this.streamingControl = null;
+        this.useStreamingTranscription = false;
+        return;
+      }
+
+      if (!settings.useDeepgramStreaming) {
         Logger.info('🌊 [Transcription] Deepgram streaming disabled in settings');
         this.streamingControl = null;
         return;
-      } else {
-        Logger.info('🌊 [Transcription] Initializing Deepgram streaming transcription...');
       }
+
+      Logger.info('🌊 [Transcription] Initializing Deepgram streaming transcription...');
 
       // Reset streaming state
       this.lastSentChunkIndex = 0;
@@ -331,13 +330,13 @@ export class TranscriptionSessionManager {
    * Also returns false if local whisper is enabled (offline mode)
    */
   isStreamingEnabled(): boolean {
+    // If local model is enabled, streaming is always disabled
     const settings = AppSettingsService.getInstance().getSettings();
-
-    // If local model is enabled, only allow streaming if useLocalStreaming is on
+    Logger.info(`🔍 [Transcription] isStreamingEnabled check - useLocalModel: ${settings.useLocalModel}, useStreamingTranscription: ${this.useStreamingTranscription}`);
     if (settings.useLocalModel) {
-      return this.useStreamingTranscription && settings.useLocalStreaming;
+      Logger.info('🔍 [Transcription] Local Model enabled - returning FALSE for streaming');
+      return false;
     }
-
     return this.useStreamingTranscription;
   }
 

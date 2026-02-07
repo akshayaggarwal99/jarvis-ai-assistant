@@ -71,10 +71,8 @@ declare const __non_webpack_require__: NodeRequire | undefined;
 
 export class SherpaOnnxTranscriber {
     private static instance: SherpaOnnxTranscriber;
-    private offlineRecognizer: any = null;
-    private onlineRecognizer: any = null;
+    private recognizer: any = null;
     private currentModelId: string | null = null;
-    private activeStream: any = null;
 
     public static getInstance(): SherpaOnnxTranscriber {
         if (!SherpaOnnxTranscriber.instance) {
@@ -98,6 +96,7 @@ export class SherpaOnnxTranscriber {
 
     /**
      * Preload the model during app startup to avoid slow first transcription.
+     * Call this early in the app lifecycle (e.g., in main.ts after app is ready).
      */
     public async preloadModel(): Promise<boolean> {
         const settings = AppSettingsService.getInstance().getSettings();
@@ -107,16 +106,16 @@ export class SherpaOnnxTranscriber {
         }
 
         const modelId = settings.localModelId;
-        const model = PARAKEET_MODELS.find(m => m.id === modelId);
-        if (!model) {
-            Logger.info('🦜 [Sherpa] Preload skipped - not a Sherpa model');
+        const isParakeet = PARAKEET_MODELS.some(m => m.id === modelId);
+        if (!isParakeet) {
+            Logger.info('🦜 [Sherpa] Preload skipped - not a Parakeet model');
             return false;
         }
 
         Logger.info(`🦜 [Sherpa] Preloading model: ${modelId}...`);
         const startTime = Date.now();
 
-        const success = model.isOnline ? this.initOnlineRecognizer(modelId) : this.initOfflineRecognizer(modelId);
+        const success = this.initRecognizer(modelId);
 
         const elapsed = Date.now() - startTime;
         if (success) {
@@ -128,114 +127,55 @@ export class SherpaOnnxTranscriber {
         return success;
     }
 
-    private getModelPaths(modelId: string): {
-        encoderPath: string;
-        decoderPath: string;
-        joinerPath: string;
-        tokensPath: string;
-        modelPath?: string;
-    } | null {
+    private getModelPaths(modelId: string): { encoderPath: string; decoderPath: string; joinerPath: string; tokensPath: string } | null {
         // Models are stored in appData/models/sherpa/<model-id>/
         const modelsDir = path.join(app.getPath('userData'), 'models', 'sherpa', modelId);
-        const model = PARAKEET_MODELS.find(m => m.id === modelId);
 
-        if (!model) return null;
-
+        // TDT models have separate encoder, decoder, joiner files
+        const encoderPath = path.join(modelsDir, 'encoder.int8.onnx');
+        const decoderPath = path.join(modelsDir, 'decoder.int8.onnx');
+        const joinerPath = path.join(modelsDir, 'joiner.int8.onnx');
         const tokensPath = path.join(modelsDir, 'tokens.txt');
 
-        if (model.isOnline) {
-            // Streaming models have separate encoder/decoder/joiner
-            const encoderPath = path.join(modelsDir, 'encoder.onnx');
-            const decoderPath = path.join(modelsDir, 'decoder.onnx');
-            const joinerPath = path.join(modelsDir, 'joiner.onnx');
+        const allExist = fs.existsSync(encoderPath) && fs.existsSync(decoderPath) &&
+            fs.existsSync(joinerPath) && fs.existsSync(tokensPath);
 
-            if (fs.existsSync(encoderPath) && fs.existsSync(decoderPath) &&
-                fs.existsSync(joinerPath) && fs.existsSync(tokensPath)) {
-                return { encoderPath, decoderPath, joinerPath, tokensPath };
-            }
-        } else {
-            // TDT models have separate encoder, decoder, joiner
-            const encoderPath = path.join(modelsDir, 'encoder.int8.onnx');
-            const decoderPath = path.join(modelsDir, 'decoder.int8.onnx');
-            const joinerPath = path.join(modelsDir, 'joiner.int8.onnx');
-
-            if (fs.existsSync(encoderPath) && fs.existsSync(decoderPath) &&
-                fs.existsSync(joinerPath) && fs.existsSync(tokensPath)) {
-                return { encoderPath, decoderPath, joinerPath, tokensPath };
-            }
-
-            // Traditional non-streaming model (single file)
-            const modelPath = path.join(modelsDir, 'model.int8.onnx');
-            if (fs.existsSync(modelPath) && fs.existsSync(tokensPath)) {
-                return { modelPath, tokensPath, encoderPath: '', decoderPath: '', joinerPath: '' };
-            }
+        if (allExist) {
+            return { encoderPath, decoderPath, joinerPath, tokensPath };
         }
-
         return null;
     }
 
-    private initOfflineRecognizer(modelId: string): boolean {
+    private initRecognizer(modelId: string): boolean {
         // If already initialized with valid model, return true
-        if (this.offlineRecognizer && this.currentModelId === modelId) {
+        if (this.recognizer && this.currentModelId === modelId) {
             return true;
         }
 
-        this.disposeRecognizers();
-
-        const paths = this.getModelPaths(modelId);
-        if (!paths) {
-            Logger.error(`🦜 [Sherpa] Offline model files not found for ${modelId}`);
-            return false;
-        }
-
-        try {
-            const config: any = {
-                featConfig: { sampleRate: 16000, featureDim: 80 },
-                modelConfig: {
-                    tokens: paths.tokensPath,
-                    numThreads: 2,
-                    provider: "cpu",
-                    debug: false,
-                }
-            };
-
-            if (paths.encoderPath && paths.decoderPath && paths.joinerPath) {
-                config.modelConfig.transducer = {
-                    encoder: paths.encoderPath,
-                    decoder: paths.decoderPath,
-                    joiner: paths.joinerPath,
-                };
-            } else if (paths.modelPath) {
-                config.modelConfig.paraformer = { model: paths.modelPath };
+        // If switching models, dispose old one (if close method exists)
+        if (this.recognizer && typeof this.recognizer.close === 'function') {
+            try {
+                this.recognizer.close();
+            } catch (e) {
+                // ignore
             }
-
-            Logger.info(`🦜 [Sherpa] Initializing offline recognizer: ${modelId}`);
-            const sherpaModule = getSherpaOnnx();
-            this.offlineRecognizer = new sherpaModule.OfflineRecognizer(config);
-            this.currentModelId = modelId;
-            return true;
-        } catch (error) {
-            Logger.error('🦜 [Sherpa] Failed to init offline recognizer:', error);
-            return false;
+            this.recognizer = null;
         }
-    }
-
-    private initOnlineRecognizer(modelId: string): boolean {
-        if (this.onlineRecognizer && this.currentModelId === modelId) {
-            return true;
-        }
-
-        this.disposeRecognizers();
 
         const paths = this.getModelPaths(modelId);
         if (!paths) {
-            Logger.error(`🦜 [Sherpa] Online model files not found for ${modelId}`);
+            Logger.error(`🦜 [Sherpa] Model files not found for ${modelId}`);
             return false;
         }
 
         try {
+            // Sherpa-ONNX configuration for OfflineRecognizer
+            // The TDT model uses a Transducer architecture with separate encoder/decoder/joiner
             const config = {
-                featConfig: { sampleRate: 16000, featureDim: 80 },
+                featConfig: {
+                    sampleRate: 16000,
+                    featureDim: 80,
+                },
                 modelConfig: {
                     transducer: {
                         encoder: paths.encoderPath,
@@ -246,38 +186,22 @@ export class SherpaOnnxTranscriber {
                     numThreads: 2,
                     provider: "cpu",
                     debug: false,
-                },
-                endpointConfig: {
-                    rule1: { forceEndpoint: false, threshold: 2.4 },
-                    rule2: { forceEndpoint: false, threshold: 1.2 },
-                    rule3: { forceEndpoint: true, threshold: 20.0 },
                 }
             };
 
-            Logger.info(`🦜 [Sherpa] Initializing online recognizer: ${modelId}`);
+            Logger.info(`🦜 [Sherpa] Initializing recognizer with model: ${modelId}`);
             const sherpaModule = getSherpaOnnx();
-            this.onlineRecognizer = new sherpaModule.OnlineRecognizer(config);
+            this.recognizer = new sherpaModule.OfflineRecognizer(config);
             this.currentModelId = modelId;
+            Logger.success('🦜 [Sherpa] Recognizer initialized successfully');
             return true;
+
         } catch (error) {
-            Logger.error('🦜 [Sherpa] Failed to init online recognizer:', error);
+            Logger.error('🦜 [Sherpa] Failed to initialize recognizer:', error);
+            this.recognizer = null;
             return false;
         }
     }
-
-    private disposeRecognizers() {
-        if (this.offlineRecognizer && typeof this.offlineRecognizer.close === 'function') {
-            try { this.offlineRecognizer.close(); } catch (e) { }
-        }
-        if (this.onlineRecognizer && typeof this.onlineRecognizer.close === 'function') {
-            try { this.onlineRecognizer.close(); } catch (e) { }
-        }
-        this.offlineRecognizer = null;
-        this.onlineRecognizer = null;
-        this.activeStream = null;
-        this.currentModelId = null;
-    }
-
 
     /**
      * Resample audio to 16kHz mono using ffmpeg (Sherpa requires 16k 16-bit mono)
@@ -327,13 +251,16 @@ export class SherpaOnnxTranscriber {
         if (!settings.useLocalModel) return null;
 
         const modelId = settings.localModelId;
-        const model = PARAKEET_MODELS.find(m => m.id === modelId);
+        const isParakeet = PARAKEET_MODELS.some(m => m.id === modelId);
 
-        if (!model) return null;
+        if (!isParakeet) {
+            // Not a parakeet model, so this transcriber shouldn't handle it
+            return null;
+        }
 
-        // Use appropriate recognizer based on model type
-        const initialized = model.isOnline ? this.initOnlineRecognizer(modelId) : this.initOfflineRecognizer(modelId);
-        if (!initialized) return null;
+        if (!this.initRecognizer(modelId)) {
+            return null;
+        }
 
         try {
             Logger.info('🦜 [Sherpa] Preparing audio from file...');
@@ -344,7 +271,7 @@ export class SherpaOnnxTranscriber {
                 return null;
             }
 
-            return model.isOnline ? this.runOnlineTranscription(samples) : this.runOfflineTranscription(samples);
+            return this.runTranscription(samples);
 
         } catch (error) {
             Logger.error('🦜 [Sherpa] Transcription failed:', error);
@@ -357,12 +284,13 @@ export class SherpaOnnxTranscriber {
         if (!settings.useLocalModel) return null;
 
         const modelId = settings.localModelId;
-        const model = PARAKEET_MODELS.find(m => m.id === modelId);
+        const isParakeet = PARAKEET_MODELS.some(m => m.id === modelId);
 
-        if (!model) return null;
+        if (!isParakeet) return null;
 
-        const initialized = model.isOnline ? this.initOnlineRecognizer(modelId) : this.initOfflineRecognizer(modelId);
-        if (!initialized) return null;
+        if (!this.initRecognizer(modelId)) {
+            return null;
+        }
 
         try {
             Logger.info(`🦜 [Sherpa] Preparing audio from buffer (${audioBuffer.length} bytes)...`);
@@ -381,7 +309,7 @@ export class SherpaOnnxTranscriber {
                 return null;
             }
 
-            const text = model.isOnline ? this.runOnlineTranscription(samples) : this.runOfflineTranscription(samples);
+            const text = this.runTranscription(samples);
 
             if (text !== null) {
                 return {
@@ -398,128 +326,27 @@ export class SherpaOnnxTranscriber {
         }
     }
 
-    public async startStreamingTranscription(
-        onPartialText?: (text: string) => void,
-        onComplete?: (text: string) => void
-    ): Promise<{
-        sendAudio: (buffer: Buffer) => boolean;
-        finish: () => Promise<string>;
-        stop: () => Promise<void>
-    } | null> {
-        const settings = AppSettingsService.getInstance().getSettings();
-        if (!settings.useLocalStreaming) {
-            Logger.info('🦜 [Sherpa] Streaming skipped - local streaming disabled');
-            return null;
-        }
-
-        const modelId = settings.localStreamingModelId;
-        const model = PARAKEET_MODELS.find(m => m.id === modelId);
-
-        if (!model || !model.isOnline) {
-            Logger.warning(`⚠️ [Sherpa] Cannot start streaming: Model ${modelId} is not a streaming model`);
-            return null;
-        }
-
-        if (!this.initOnlineRecognizer(modelId)) {
-            return null;
-        }
-
+    private runTranscription(samples: Float32Array): string | null {
         try {
-            Logger.info('🦜 [Sherpa] Starting online stream...');
-            this.activeStream = this.onlineRecognizer.createStream();
-            let accumulatedText = '';
+            Logger.info(`🦜 [Sherpa] Transcribing ${samples.length} samples...`);
 
-            return {
-                sendAudio: (buffer: Buffer) => {
-                    if (!this.activeStream || !this.onlineRecognizer) return false;
+            const stream = this.recognizer.createStream();
 
-                    try {
-                        // Assuming input buffer is 16kHz 16-bit mono PCM (standard for this app)
-                        const samples = new Float32Array(buffer.length / 2);
-                        for (let i = 0; i < samples.length; i++) {
-                            const int16 = buffer.readInt16LE(i * 2);
-                            samples[i] = int16 / 32768.0;
-                        }
-
-                        this.activeStream.acceptWaveform({ sampleRate: 16000, samples });
-
-                        while (this.onlineRecognizer.isReady(this.activeStream)) {
-                            this.onlineRecognizer.decode(this.activeStream);
-                        }
-
-                        const result = this.onlineRecognizer.getResult(this.activeStream);
-                        if (result?.text && result.text !== accumulatedText) {
-                            accumulatedText = result.text;
-                            onPartialText?.(accumulatedText);
-                        }
-                        return true;
-                    } catch (e) {
-                        Logger.error('🦜 [Sherpa] Stream audio processing failed:', e);
-                        return false;
-                    }
-                },
-                finish: async () => {
-                    if (!this.activeStream || !this.onlineRecognizer) return accumulatedText;
-
-                    try {
-                        this.activeStream.inputFinished();
-                        while (this.onlineRecognizer.isReady(this.activeStream)) {
-                            this.onlineRecognizer.decode(this.activeStream);
-                        }
-                        const result = this.onlineRecognizer.getResult(this.activeStream);
-                        const finalText = result?.text || accumulatedText;
-                        onComplete?.(finalText);
-                        this.activeStream = null;
-                        return finalText;
-                    } catch (e) {
-                        Logger.error('🦜 [Sherpa] Stream finish failed:', e);
-                        return accumulatedText;
-                    }
-                },
-                stop: async () => {
-                    this.activeStream = null;
-                    Logger.info('🦜 [Sherpa] Online stream stopped');
-                }
-            };
-        } catch (error) {
-            Logger.error('🦜 [Sherpa] Failed to start online stream:', error);
-            return null;
-        }
-    }
-
-    private runOfflineTranscription(samples: Float32Array): string | null {
-        try {
-            Logger.info(`🦜 [Sherpa] Offline transcribing ${samples.length} samples...`);
-            const stream = this.offlineRecognizer.createStream();
+            // API expects: stream.acceptWaveform({sampleRate: number, samples: Float32Array})
             stream.acceptWaveform({ sampleRate: 16000, samples: samples });
-            this.offlineRecognizer.decode(stream);
-            const result = this.offlineRecognizer.getResult(stream);
+
+            this.recognizer.decode(stream);
+
+            const result = this.recognizer.getResult(stream);
             const text = result?.text?.trim() || '';
+
+            // Note: stream.free() doesn't exist in this sherpa-onnx-node version
+            // The stream will be garbage collected automatically
+
             Logger.info(`🦜 [Sherpa] Result: "${text}"`);
             return text || null;
         } catch (error) {
-            Logger.error('🦜 [Sherpa] Offline transcription failed:', error);
-            return null;
-        }
-    }
-
-    private runOnlineTranscription(samples: Float32Array): string | null {
-        try {
-            Logger.info(`🦜 [Sherpa] Online transcribing ${samples.length} samples (Batch)...`);
-            const stream = this.onlineRecognizer.createStream();
-            stream.acceptWaveform({ sampleRate: 16000, samples: samples });
-            stream.inputFinished();
-
-            while (this.onlineRecognizer.isReady(stream)) {
-                this.onlineRecognizer.decode(stream);
-            }
-
-            const result = this.onlineRecognizer.getResult(stream);
-            const text = result?.text?.trim() || '';
-            Logger.info(`🦜 [Sherpa] Result: "${text}"`);
-            return text || null;
-        } catch (error) {
-            Logger.error('🦜 [Sherpa] Online transcription failed:', error);
+            Logger.error('🦜 [Sherpa] Transcription failed:', error);
             return null;
         }
     }

@@ -8,7 +8,7 @@ import { PARAKEET_MODELS } from '../transcription/sherpa-models';
 type SettingsTab = 'general' | 'transcription' | 'ai-models' | 'prompts' | 'system';
 
 // Local Whisper model options
-export const WHISPER_MODELS = [
+const WHISPER_MODELS = [
   { id: 'tiny.en', name: 'Tiny (English)', size: '75 MB', speed: 'Fastest' },
   { id: 'tiny', name: 'Tiny (Multi)', size: '75 MB', speed: 'Fastest' },
   { id: 'base.en', name: 'Base (English)', size: '142 MB', speed: 'Fast' },
@@ -40,8 +40,8 @@ const Settings: React.FC = () => {
   const [aiPostProcessing, setAiPostProcessing] = useState(true);
   const [useLocalModel, setUseLocalModel] = useState(false);
   const [localModelId, setLocalModelId] = useState('tiny.en');
-  const [useLocalStreaming, setUseLocalStreaming] = useState(true);
-  const [localStreamingModelId, setLocalStreamingModelId] = useState('sherpa-onnx-streaming-zipformer-en-2023-06-26');
+  // const [useParakeet, setUseParakeet] = useState(false); // Deprecated
+  // const [parakeetModel, setParakeetModel] = useState(PARAKEET_MODELS[0].id); // Deprecated
   const [downloadedParakeetModels, setDownloadedParakeetModels] = useState<string[]>([]);
   const [downloadingParakeet, setDownloadingParakeet] = useState<string | null>(null);
   const [parakeetDownloadProgress, setParakeetDownloadProgress] = useState<number>(0);
@@ -245,8 +245,8 @@ const Settings: React.FC = () => {
           setAiPostProcessing(appSettings.aiPostProcessing);
           setUseLocalModel(appSettings.useLocalModel ?? false);
           setLocalModelId(appSettings.localModelId ?? 'tiny.en');
-          setUseLocalStreaming(appSettings.useLocalStreaming ?? true);
-          setLocalStreamingModelId(appSettings.localStreamingModelId ?? 'sherpa-onnx-streaming-zipformer-en-2023-06-26');
+          // setUseParakeet(appSettings.useParakeet ?? false); // Legacy support handled in migration
+          // setParakeetModel(appSettings.parakeetModel || PARAKEET_MODELS[0].id);
           setDownloadedParakeetModels(appSettings.downloadedParakeetModels || []);
           setUserName(appSettings.userName ?? '');
           setShowWaveform(appSettings.showWaveform ?? true);
@@ -432,38 +432,6 @@ const Settings: React.FC = () => {
       }
     } catch (error) {
       console.error('Failed to update local model settings:', error);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleLocalStreamingToggle = async () => {
-    try {
-      setIsSaving(true);
-      const newValue = !useLocalStreaming;
-      const electronAPI = (window as any).electronAPI;
-
-      if (electronAPI && electronAPI.appUpdateSettings) {
-        await electronAPI.appUpdateSettings({ useLocalStreaming: newValue });
-        setUseLocalStreaming(newValue);
-      }
-    } catch (error) {
-      console.error('Failed to update local streaming settings:', error);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleLocalStreamingModelChange = async (modelId: string) => {
-    try {
-      setIsSaving(true);
-      const electronAPI = (window as any).electronAPI;
-      if (electronAPI?.appUpdateSettings) {
-        await electronAPI.appUpdateSettings({ localStreamingModelId: modelId });
-        setLocalStreamingModelId(modelId);
-      }
-    } catch (error) {
-      console.error('Failed to update local streaming model:', error);
     } finally {
       setIsSaving(false);
     }
@@ -1144,146 +1112,104 @@ const Settings: React.FC = () => {
           </div>
 
           {useLocalModel && (
-            <div className={`${theme.glass.secondary} rounded-lg p-4 border border-white/5 mt-3 space-y-6`}>
-              <div>
-                <label className={`block text-sm font-medium ${theme.text.primary} mb-2`}>
-                  Select Model
-                </label>
+            <div className={`${theme.glass.secondary} rounded-lg p-4 border border-white/5 mt-3`}>
+              <label className={`block text-sm font-medium ${theme.text.primary} mb-2`}>
+                Select Model
+              </label>
 
-                {/* Combined Dropdown */}
-                <div className="relative mb-4">
-                  <select
-                    value={localModelId}
-                    onChange={(e) => handleLocalModelChange(e.target.value)}
-                    disabled={!!downloadingModel || !!downloadingParakeet}
-                    className={`w-full bg-black/40 rounded-xl px-4 py-3 text-white border border-white/20 focus:border-white/40 focus:outline-none transition-colors text-sm appearance-none cursor-pointer ${downloadingModel || downloadingParakeet ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    <optgroup label="Whisper (Standard)">
-                      {WHISPER_MODELS.map((model) => {
-                        const isDownloaded = downloadedModels.includes(model.id);
-                        return (
-                          <option key={model.id} value={model.id} className="bg-gray-900 text-white">
-                            {model.name} ({model.size}) - {isDownloaded ? '✓ Ready' : '↓ Download Needed'}
-                          </option>
-                        );
-                      })}
-                    </optgroup>
-                    <optgroup label="Sherpa/Parakeet (High Accuracy)">
-                      {PARAKEET_MODELS.map((model) => {
-                        const isDownloaded = downloadedParakeetModels.includes(model.id);
-                        return (
-                          <option key={model.id} value={model.id} className="bg-gray-900 text-white">
-                            {model.name} ({model.size}) - {isDownloaded ? '✓ Ready' : '↓ Download Needed'}
-                          </option>
-                        );
-                      })}
-                    </optgroup>
-                  </select>
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                    <svg className="w-4 h-4 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </div>
+              {/* Combined Dropdown */}
+              <div className="relative mb-4">
+                <select
+                  value={localModelId}
+                  onChange={(e) => handleLocalModelChange(e.target.value)}
+                  disabled={!!downloadingModel || !!downloadingParakeet}
+                  className={`w-full bg-black/40 rounded-xl px-4 py-3 text-white border border-white/20 focus:border-white/40 focus:outline-none transition-colors text-sm appearance-none cursor-pointer ${downloadingModel || downloadingParakeet ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  <optgroup label="Whisper (Standard)">
+                    {WHISPER_MODELS.map((model) => {
+                      const isDownloaded = downloadedModels.includes(model.id);
+                      return (
+                        <option key={model.id} value={model.id} className="bg-gray-900 text-white">
+                          {model.name} ({model.size}) - {isDownloaded ? '✓ Ready' : '↓ Download Needed'}
+                        </option>
+                      );
+                    })}
+                  </optgroup>
+                  <optgroup label="Sherpa/Parakeet (High Accuracy)">
+                    {PARAKEET_MODELS.map((model) => {
+                      const isDownloaded = downloadedParakeetModels.includes(model.id);
+                      return (
+                        <option key={model.id} value={model.id} className="bg-gray-900 text-white">
+                          {model.name} ({model.size}) - {isDownloaded ? '✓ Ready' : '↓ Download Needed'}
+                        </option>
+                      );
+                    })}
+                  </optgroup>
+                </select>
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                  <svg className="w-4 h-4 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
                 </div>
-
-                {/* Status / Download Button */}
-                {(() => {
-                  const isParakeet = PARAKEET_MODELS.some(m => m.id === localModelId);
-                  const isWhisper = WHISPER_MODELS.some(m => m.id === localModelId);
-
-                  let isDownloaded = false;
-                  if (isParakeet) isDownloaded = downloadedParakeetModels.includes(localModelId);
-                  if (isWhisper) isDownloaded = downloadedModels.includes(localModelId);
-
-                  const isDownloading = (isParakeet && downloadingParakeet === localModelId) || (isWhisper && downloadingModel === localModelId);
-                  const currentProgress = isParakeet ? parakeetDownloadProgress : downloadProgress;
-
-                  return (
-                    <div className="mt-2 text-sm">
-                      {isDownloading ? (
-                        <div className="space-y-2">
-                          <div className="flex justify-between text-xs text-blue-300">
-                            <span>Downloading model...</span>
-                            <span>{currentProgress}%</span>
-                          </div>
-                          <div className="w-full bg-black/40 rounded-full h-1.5 overflow-hidden">
-                            <div
-                              className="bg-blue-500 h-full rounded-full transition-all duration-300 ease-out"
-                              style={{ width: `${currentProgress}%` }}
-                            />
-                          </div>
-                        </div>
-                      ) : !isDownloaded ? (
-                        <div className="flex items-center justify-between bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
-                          <div className="flex gap-2 items-center">
-                            <svg className="w-4 h-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                            </svg>
-                            <span className="text-amber-200 text-xs">Model not installed</span>
-                          </div>
-                          <button
-                            onClick={() => handleDownloadModel(localModelId)}
-                            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded-md transition-colors"
-                          >
-                            Download Now
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2 text-green-400 text-xs mt-2">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                          Model ready to use
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-
-                <p className={`text-xs ${theme.text.tertiary} mt-3`}>
-                  Whisper models are general-purpose. Parakeet models (Sherpa-ONNX) offer higher accuracy but may be larger.
-                </p>
               </div>
 
-              {/* Local Streaming Option */}
-              <div className="pt-6 border-t border-white/5 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className={`font-medium ${theme.text.primary} mb-1`}>Local Streaming</h4>
-                    <p className={`text-sm ${theme.text.tertiary}`}>Real-time feedback (requires compatible model)</p>
-                  </div>
-                  <Toggle enabled={useLocalStreaming} onToggle={handleLocalStreamingToggle} />
-                </div>
+              {/* Status / Download Button */}
+              {(() => {
+                const isParakeet = PARAKEET_MODELS.some(m => m.id === localModelId);
+                const isWhisper = WHISPER_MODELS.some(m => m.id === localModelId);
 
-                {useLocalStreaming && (
-                  <div className="space-y-4">
-                    <label className={`block text-sm font-medium ${theme.text.primary} mb-2`}>
-                      Streaming Model
-                    </label>
-                    <div className="relative">
-                      <select
-                        value={localStreamingModelId}
-                        onChange={(e) => handleLocalStreamingModelChange(e.target.value)}
-                        className="w-full bg-black/40 rounded-xl px-4 py-3 text-white border border-white/20 focus:border-white/40 focus:outline-none transition-colors text-sm appearance-none cursor-pointer"
-                      >
-                        {PARAKEET_MODELS.filter(m => m.isOnline).map((model) => {
-                          const isDownloaded = downloadedParakeetModels.includes(model.id);
-                          return (
-                            <option key={model.id} value={model.id} className="bg-gray-900 text-white">
-                              {model.name} ({model.size}) - {isDownloaded ? '✓ Ready' : '↓ Download Needed'}
-                            </option>
-                          );
-                        })}
-                      </select>
-                      <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                        <svg className="w-4 h-4 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
+                let isDownloaded = false;
+                if (isParakeet) isDownloaded = downloadedParakeetModels.includes(localModelId);
+                if (isWhisper) isDownloaded = downloadedModels.includes(localModelId);
+
+                const isDownloading = (isParakeet && downloadingParakeet === localModelId) || (isWhisper && downloadingModel === localModelId);
+                const currentProgress = isParakeet ? parakeetDownloadProgress : downloadProgress;
+
+                return (
+                  <div className="mt-2 text-sm">
+                    {isDownloading ? (
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-xs text-blue-300">
+                          <span>Downloading model...</span>
+                          <span>{currentProgress}%</span>
+                        </div>
+                        <div className="w-full bg-black/40 rounded-full h-1.5 overflow-hidden">
+                          <div
+                            className="bg-blue-500 h-full rounded-full transition-all duration-300 ease-out"
+                            style={{ width: `${currentProgress}%` }}
+                          />
+                        </div>
                       </div>
-                    </div>
+                    ) : !isDownloaded ? (
+                      <div className="flex items-center justify-between bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
+                        <div className="flex gap-2 items-center">
+                          <svg className="w-4 h-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                          <span className="text-amber-200 text-xs">Model not installed</span>
+                        </div>
+                        <button
+                          onClick={() => handleDownloadModel(localModelId)}
+                          className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded-md transition-colors"
+                        >
+                          Download Now
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-green-400 text-xs mt-2">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        Model ready to use
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                );
+              })()}
+
+              <p className={`text-xs ${theme.text.tertiary} mt-3`}>
+                Whisper models are general-purpose. Parakeet models (Sherpa-ONNX) offer higher accuracy but may be larger.
+              </p>
             </div>
           )}
         </div>
