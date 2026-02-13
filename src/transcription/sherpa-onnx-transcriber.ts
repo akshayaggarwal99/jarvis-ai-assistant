@@ -128,8 +128,8 @@ export class SherpaOnnxTranscriber {
     }
 
     private getModelPaths(modelId: string): { encoderPath: string; decoderPath: string; joinerPath: string; tokensPath: string } | null {
-        // Models are stored in appData/models/sherpa/<model-id>/
-        const modelsDir = path.join(app.getPath('userData'), 'models', 'sherpa', modelId);
+        // Models are stored in appData/sherpa-models/<model-id>/
+        const modelsDir = path.join(app.getPath('userData'), 'sherpa-models', modelId);
 
         // TDT models have separate encoder, decoder, joiner files
         const encoderPath = path.join(modelsDir, 'encoder.int8.onnx');

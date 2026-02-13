@@ -5,7 +5,9 @@ export interface SherpaModel {
     size: string;
     language: string;
     urls: {
-        model: string;
+        encoder: string;
+        decoder: string;
+        joiner: string;
         tokens: string;
     };
 }
@@ -18,7 +20,9 @@ export const PARAKEET_MODELS: SherpaModel[] = [
         size: '600MB',
         language: 'English',
         urls: {
-            model: 'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/resolve/main/model.int8.onnx',
+            encoder: 'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/resolve/main/encoder.int8.onnx',
+            decoder: 'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/resolve/main/decoder.int8.onnx',
+            joiner: 'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/resolve/main/joiner.int8.onnx',
             tokens: 'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/resolve/main/tokens.txt'
         }
     }

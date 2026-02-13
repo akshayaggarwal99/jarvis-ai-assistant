@@ -247,7 +247,7 @@ const Settings: React.FC = () => {
           setLocalModelId(appSettings.localModelId ?? 'tiny.en');
           // setUseParakeet(appSettings.useParakeet ?? false); // Legacy support handled in migration
           // setParakeetModel(appSettings.parakeetModel || PARAKEET_MODELS[0].id);
-          setDownloadedParakeetModels(appSettings.downloadedParakeetModels || []);
+          // setDownloadedParakeetModels(appSettings.downloadedParakeetModels || []);
           setUserName(appSettings.userName ?? '');
           setShowWaveform(appSettings.showWaveform ?? true);
           setPreferredMicrophone(appSettings.preferredMicrophone ?? 'default');
@@ -462,13 +462,14 @@ const Settings: React.FC = () => {
         setLocalModelId(modelId);
       }
 
-      // Trigger download if needed - but maybe let user click download?
-      // Existing Whisper behavior was auto-download. Existing Parakeet was manual.
-      // Let's stick to manual download for now to be safe, but show a clear button.
-      // OR, since we are selecting it, we likely want to use it.
-      // Let's AUTO-DOWNLOAD if it's Whisper (legacy behavior) but maybe manual for Parakeet (larger?)
-      // Actually, Parakeet models are ~200MB, Whisper Small is ~466MB.
-      // Let's just update the state and let the UI show the "Download" button if needed.
+      // Trigger download if needed
+      if (isParakeet && !isDownloaded) {
+        console.log(`[Settings] Auto-downloading Parakeet model: ${modelId}`);
+        handleDownloadParakeetModel(modelId);
+      } else if (isWhisper && !isDownloaded) {
+        console.log(`[Settings] Auto-downloading Whisper model: ${modelId}`);
+        handleDownloadWhisperModel(modelId);
+      }
 
     } catch (error) {
       console.error('Failed to update local model:', error);
@@ -526,6 +527,7 @@ const Settings: React.FC = () => {
     try {
       if (electronAPI?.onSherpaDownloadProgress) {
         electronAPI.onSherpaDownloadProgress(({ percent }: { percent: number }) => {
+          console.log(`[Settings] Download progress: ${percent}%`);
           setParakeetDownloadProgress(percent);
         });
       }
@@ -1181,19 +1183,12 @@ const Settings: React.FC = () => {
                         </div>
                       </div>
                     ) : !isDownloaded ? (
-                      <div className="flex items-center justify-between bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
-                        <div className="flex gap-2 items-center">
-                          <svg className="w-4 h-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                          </svg>
-                          <span className="text-amber-200 text-xs">Model not installed</span>
-                        </div>
-                        <button
-                          onClick={() => handleDownloadModel(localModelId)}
-                          className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded-md transition-colors"
-                        >
-                          Download Now
-                        </button>
+                      <div className="flex items-center gap-2 text-amber-400 text-xs mt-2">
+                        <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Starting download...
                       </div>
                     ) : (
                       <div className="flex items-center gap-2 text-green-400 text-xs mt-2">
