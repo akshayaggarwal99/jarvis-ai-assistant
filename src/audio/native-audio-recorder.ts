@@ -152,7 +152,16 @@ export class NativeAudioRecorder {
           }
         }
         
-        // Don't throw - let it continue and fail gracefully with better error reporting
+        if (!audioStarted) {
+          try {
+            this.nativeModule.stopCapture();
+          } catch (stopError) {
+            Logger.debug('⚠️ [NativeAudio] stopCapture during startup failure failed:', stopError);
+          }
+          this.cleanup();
+          this.isRecording = false;
+          throw new Error(`Native audio capture did not become active (bytes=${totalBytesReceived})`);
+        }
       }
 
       Logger.success('✅ Native audio recording started successfully');

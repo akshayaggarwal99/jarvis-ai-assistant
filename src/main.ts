@@ -44,7 +44,7 @@ try {
   Logger.warning('Error loading .env for configuration:', error);
 }
 
-import { app, BrowserWindow, ipcMain, screen, globalShortcut, Tray, Menu, nativeImage, shell, nativeTheme, systemPreferences } from 'electron';
+import { app, BrowserWindow, ipcMain, screen, globalShortcut, Tray, Menu, nativeImage, shell, nativeTheme, systemPreferences, powerMonitor } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -990,15 +990,10 @@ async function handleHotkeyDown() {
     // Send to waveform window first (primary UI) - even if hidden, for audio feedback
     waveformWindow.webContents.send('push-to-talk-start');
 
-    // ⚡ INSTANT MICROPHONE STATUS - Send recording status immediately
-    waveformWindow.webContents.send('recording-status', { recording: true, active: true });
-
     // Also update any other windows that might show status
     const currentDashboard = getDashboardWindow();
     if (currentDashboard && !currentDashboard.isDestroyed()) {
       currentDashboard.webContents.send('fn-key-state-change', true);
-      // Also send recording status to dashboard
-      currentDashboard.webContents.send('recording-status', { recording: true, active: true });
     }
   } else {
     Logger.warning('⚠️ [UI] Waveform window not available for immediate feedback');
@@ -1266,10 +1261,14 @@ async function handleHotkeyDown() {
         Logger.debug('🎤 [Immediate] Starting push-to-talk audio recording...');
         pushToTalkService.start().then(() => {
           Logger.debug('✅ [Immediate] Push-to-talk audio started successfully');
+          waveformWindow?.webContents.send('recording-status', { recording: true, active: true });
+          getDashboardWindow()?.webContents.send('recording-status', { recording: true, active: true });
         }).catch(error => {
           Logger.error('❌ [Immediate] Failed to start push-to-talk:', error);
           // Cancel UI if audio fails
           waveformWindow?.webContents.send('push-to-talk-cancel');
+          waveformWindow?.webContents.send('recording-status', { recording: false, active: false });
+          getDashboardWindow()?.webContents.send('recording-status', { recording: false, active: false });
         }).finally(() => {
           (pushToTalkService as any)._isStarting = false;
         });
@@ -1387,10 +1386,8 @@ async function handleHotkeyUp() {
 
   // Handle push-to-talk release - check for BOTH active state AND recording start time
   // This ensures we only stop if we actually started recording
-  if (pushToTalkService && pushToTalkService.active && pushToTalkService.recordingStartTime) {
+  if (pushToTalkService && pushToTalkService.active) {
     Logger.debug('Fn key released - stopping push-to-talk...');
-    const duration = Date.now() - pushToTalkService.recordingStartTime;
-    Logger.performance('Push-to-talk duration', duration);
 
     // 🕒 START END-TO-END TIMING MEASUREMENT
     const keyReleaseTime = Date.now();
@@ -1406,7 +1403,7 @@ async function handleHotkeyUp() {
     // ⏱️ IMPROVED TIMING: Stop recording and let service complete transcription
     stopPushToTalk();
   } else if (pushToTalkService) {
-    Logger.debug(`Fn key released - service state: active=${pushToTalkService.active}, hasRecordingTime=${!!pushToTalkService.recordingStartTime}`);
+    Logger.debug(`Fn key released - service state: active=${pushToTalkService.active}`);
   } else {
     Logger.debug('Fn key released - no push-to-talk service available');
   }
@@ -1631,6 +1628,38 @@ app.whenReady().then(async () => {
   const powerManager = PowerManagementService.getInstance();
   powerManager.registerService('app-lifecycle');
   Logger.info('🔋 [Startup] Power management initialized');
+
+  powerMonitor.on('suspend', () => {
+    Logger.info('😴 [Lifecycle] System suspend detected - resetting push-to-talk state');
+
+    try {
+      if (pushToTalkService && (pushToTalkService.active || pushToTalkService.transcribing)) {
+        pushToTalkService.hardStop();
+      }
+    } catch (error) {
+      Logger.error('❌ [Lifecycle] Failed to hard stop push-to-talk on suspend:', error);
+    }
+
+    try {
+      waveformWindow?.webContents.send('push-to-talk-cancel');
+      waveformWindow?.webContents.send('recording-status', { recording: false, active: false });
+      getDashboardWindow()?.webContents.send('recording-status', { recording: false, active: false });
+    } catch (error) {
+      Logger.error('❌ [Lifecycle] Failed to reset UI state on suspend:', error);
+    }
+  });
+
+  powerMonitor.on('resume', () => {
+    Logger.info('🌅 [Lifecycle] System resume detected - rearming hotkey monitoring');
+    setTimeout(async () => {
+      try {
+        await stopHotkeyMonitoring();
+        startHotkeyMonitoring();
+      } catch (error) {
+        Logger.error('❌ [Lifecycle] Failed to rearm hotkey monitoring after resume:', error);
+      }
+    }, 600);
+  });
 
   // IPC handlers already registered at module initialization
 

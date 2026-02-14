@@ -517,7 +517,7 @@
             animationFrame = requestAnimationFrame(animateWaves);
         }
 
-        function startRecording() {
+        function startRecording(triggerBackend = true) {
             if (isRecording || isPushToTalk) return;
             isRecording = true;
             
@@ -528,7 +528,9 @@
             
             animateWaves();
             
-            ipcRenderer.send('start-dictation-manual');
+            if (triggerBackend) {
+                ipcRenderer.send('start-dictation-manual');
+            }
         }
 
         function stopRecording() {
@@ -565,9 +567,6 @@
             bar.classList.add('hidden');
             pushToTalkBar.classList.remove('hidden');
             animateWaves();
-            
-            // ⚡ Start recording in background - don't wait for response
-            ipcRenderer.send('start-push-to-talk-recording');
         }
 
         function stopPushToTalk() {
@@ -686,7 +685,7 @@
 
         // Listen for manual dictation events (double-tap or click)
         ipcRenderer.on('dictation-start', () => {
-            startRecording();
+            startRecording(false);
         });
 
         ipcRenderer.on('dictation-stop', () => {

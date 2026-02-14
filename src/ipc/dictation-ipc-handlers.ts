@@ -84,21 +84,6 @@ export class DictationIPCHandlers {
       }
     });
     
-    // Push-to-talk recording with timing control
-    ipcMain.on('start-push-to-talk-recording', async () => {
-      Logger.debug('🔊 [Audio] Starting push-to-talk recording (after sound delay)');
-      if (this.pushToTalkService) {
-        await this.pushToTalkService.start();
-      }
-    });
-    
-    ipcMain.on('stop-push-to-talk-recording', async () => {
-      Logger.debug('🔊 [Audio] Stopping push-to-talk recording (before stop sound)');
-      if (this.pushToTalkService) {
-        await this.pushToTalkService.stop();
-      }
-    });
-    
     // Transcript history
     ipcMain.on('get-transcript-history', (event) => {
       event.reply('transcript-history', this.transcripts);

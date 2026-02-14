@@ -113,9 +113,15 @@ export class FastAudioRecorder {
               Logger.debug('✅ [FastAudio] Recording confirmed active (data flowing)');
               resolve();
             } else {
-              Logger.warning('⚠️ [FastAudio] Process running but no audio chunks received yet');
-              // Don't reject yet, give it a bit more time or let it fail gracefully later
-              resolve();
+              Logger.error('❌ [FastAudio] Process running but no audio chunks received - treating as startup failure');
+              try {
+                this.recordingProcess.kill('SIGTERM');
+              } catch (killError) {
+                Logger.debug('⚠️ [FastAudio] Failed to terminate stalled FFmpeg process:', killError);
+              }
+              this.recordingProcess = null;
+              this.isRecording = false;
+              reject(new Error('FFmpeg started but produced no audio chunks'));
             }
           } else {
             Logger.error('❌ [FastAudio] Recording process failed to start within timeout');

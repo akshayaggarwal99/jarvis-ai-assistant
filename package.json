@@ -1,6 +1,6 @@
 {
   "name": "jarvis-ai-assistant",
-  "version": "1.1.9",
+  "version": "1.1.10",
   "description": "Jarvis - AI Assistant for Mac with voice dictation and AI capabilities",
   "main": "dist/main.js",
   "scripts": {
@@ -93,6 +93,7 @@
     "openai": "^5.5.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "sherpa-onnx-darwin-x64": "1.12.24",
     "sherpa-onnx-node": "^1.12.23",
     "utf-8-validate": "^6.0.3",
     "webpack": "^5.89.0",
@@ -160,7 +161,10 @@
     "asarUnpack": [
       "node_modules/@electron",
       "node_modules/electron",
-      "**/*.node"
+      "**/*.node",
+      "node_modules/sherpa-onnx-node/**",
+      "node_modules/sherpa-onnx-darwin-arm64/**",
+      "node_modules/sherpa-onnx-darwin-x64/**"
     ],
     "mac": {
       "category": "public.app-category.business",
