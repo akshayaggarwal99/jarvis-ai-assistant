@@ -12,6 +12,10 @@ export class NativeAudioRecorder {
   private audioChunks: Buffer[] = [];
   private recordingStartTime = 0;
   private onAudioLevel?: (level: number) => void;
+  private inputSampleRate = 16000;
+  private hasLoggedResamplerActivation = false;
+  private totalInputBytes = 0;
+  private totalOutputBytes = 0;
 
   constructor() {
     try {
@@ -81,17 +85,34 @@ export class NativeAudioRecorder {
       this.recordingStartTime = Date.now();
       this.audioChunks = [];
       this.onAudioLevel = onAudioLevel;
+      this.totalInputBytes = 0;
+      this.totalOutputBytes = 0;
+      this.hasLoggedResamplerActivation = false;
       
       Logger.debug('🎤 Starting native audio recording...');
+      Logger.debug(`[NativeAudio][Diagnostics] Native sample-rate probe available: ${typeof this.nativeModule.getCurrentSampleRate === 'function'}`);
 
       // Start native audio capture with callback
       const success = this.nativeModule.startCapture((audioBuffer: Buffer) => {
-        // Add audio data to chunks
-        this.audioChunks.push(audioBuffer);
+        this.totalInputBytes += audioBuffer?.length || 0;
+
+        if (typeof this.nativeModule.getCurrentSampleRate === 'function') {
+          const detectedRate = Number(this.nativeModule.getCurrentSampleRate());
+          if (Number.isFinite(detectedRate) && detectedRate >= 8000 && detectedRate <= 192000 && detectedRate !== this.inputSampleRate) {
+            this.inputSampleRate = detectedRate;
+            Logger.debug(`🎙️ [NativeAudio] Detected input sample rate: ${detectedRate}Hz`);
+          }
+        }
+
+        const processedBuffer = this.ensure16kLinear16(audioBuffer);
+        this.totalOutputBytes += processedBuffer.length;
+
+        // Add normalized (16k) audio data to chunks
+        this.audioChunks.push(processedBuffer);
         
         // Calculate and report audio level
         if (this.onAudioLevel) {
-          const level = this.calculateAudioLevel(audioBuffer);
+          const level = this.calculateAudioLevel(processedBuffer);
           this.onAudioLevel(level);
         }
       });
@@ -128,9 +149,21 @@ export class NativeAudioRecorder {
             
             // Try starting again
             const retrySuccess = this.nativeModule.startCapture((audioBuffer: Buffer) => {
-              this.audioChunks.push(audioBuffer);
+              this.totalInputBytes += audioBuffer?.length || 0;
+
+              if (typeof this.nativeModule.getCurrentSampleRate === 'function') {
+                const detectedRate = Number(this.nativeModule.getCurrentSampleRate());
+                if (Number.isFinite(detectedRate) && detectedRate >= 8000 && detectedRate <= 192000 && detectedRate !== this.inputSampleRate) {
+                  this.inputSampleRate = detectedRate;
+                  Logger.debug(`🎙️ [NativeAudio] Detected input sample rate (retry): ${detectedRate}Hz`);
+                }
+              }
+
+              const processedBuffer = this.ensure16kLinear16(audioBuffer);
+              this.totalOutputBytes += processedBuffer.length;
+              this.audioChunks.push(processedBuffer);
               if (this.onAudioLevel) {
-                const level = this.calculateAudioLevel(audioBuffer);
+                const level = this.calculateAudioLevel(processedBuffer);
                 this.onAudioLevel(level);
               }
             });
@@ -198,6 +231,7 @@ export class NativeAudioRecorder {
       // Clear chunks and reset state for next recording
       this.cleanup();
       
+      Logger.debug(`[NativeAudio][Diagnostics] Capture summary: inputRate=${this.inputSampleRate}Hz targetRate=16000Hz inputBytes=${this.totalInputBytes} outputBytes=${this.totalOutputBytes}`);
       Logger.success(`🎵 Audio captured: ${pcmBuffer.length} bytes Linear16 PCM (${duration}ms) - Deepgram ready`);
       
       return pcmBuffer; // Return raw PCM - Deepgram uses it directly, OpenAI converts to WAV
@@ -220,6 +254,10 @@ export class NativeAudioRecorder {
       this.audioChunks = [];
       this.recordingStartTime = 0;
       this.onAudioLevel = undefined; // Clear callback to prevent memory leaks
+      this.inputSampleRate = 16000;
+      this.hasLoggedResamplerActivation = false;
+      this.totalInputBytes = 0;
+      this.totalOutputBytes = 0;
       Logger.debug('🧹 [NativeAudio] Cleanup completed - resources released');
     } catch (error) {
       Logger.error('❌ [NativeAudio] Cleanup error:', error);
@@ -228,6 +266,10 @@ export class NativeAudioRecorder {
       this.audioChunks = [];
       this.recordingStartTime = 0;
       this.onAudioLevel = undefined;
+      this.inputSampleRate = 16000;
+      this.hasLoggedResamplerActivation = false;
+      this.totalInputBytes = 0;
+      this.totalOutputBytes = 0;
     }
   }
 
@@ -243,7 +285,56 @@ export class NativeAudioRecorder {
     this.audioChunks = [];
     this.recordingStartTime = 0;
     this.onAudioLevel = undefined;
+    this.inputSampleRate = 16000;
+    this.hasLoggedResamplerActivation = false;
+    this.totalInputBytes = 0;
+    this.totalOutputBytes = 0;
     Logger.debug('🚨 [NativeAudio] Emergency stop completed');
+  }
+
+  private ensure16kLinear16(chunk: Buffer): Buffer {
+    if (!chunk || chunk.length < 2) return Buffer.alloc(0);
+
+    const alignedLength = chunk.length - (chunk.length % 2);
+    const alignedChunk = alignedLength === chunk.length ? chunk : chunk.subarray(0, alignedLength);
+
+    if (this.inputSampleRate === 16000) {
+      return alignedChunk;
+    }
+
+    if (!this.hasLoggedResamplerActivation) {
+      this.hasLoggedResamplerActivation = true;
+      Logger.debug(`[NativeAudio][Diagnostics] Resampler active: ${this.inputSampleRate}Hz -> 16000Hz`);
+    }
+
+    return this.downsampleLinear16Mono(alignedChunk, this.inputSampleRate, 16000);
+  }
+
+  private downsampleLinear16Mono(input: Buffer, inRate: number, outRate: number): Buffer {
+    if (inRate <= 0 || outRate <= 0 || input.length < 2) return Buffer.alloc(0);
+    if (inRate === outRate) return input;
+
+    const inputSampleCount = Math.floor(input.length / 2);
+    if (inputSampleCount <= 1) return Buffer.alloc(0);
+
+    const outputSampleCount = Math.max(1, Math.floor((inputSampleCount * outRate) / inRate));
+    const output = Buffer.alloc(outputSampleCount * 2);
+    const ratio = inRate / outRate;
+
+    for (let i = 0; i < outputSampleCount; i++) {
+      const sourceIndex = i * ratio;
+      const index0 = Math.floor(sourceIndex);
+      const index1 = Math.min(index0 + 1, inputSampleCount - 1);
+      const frac = sourceIndex - index0;
+
+      const sample0 = input.readInt16LE(index0 * 2);
+      const sample1 = input.readInt16LE(index1 * 2);
+      const value = Math.round(sample0 + (sample1 - sample0) * frac);
+
+      output.writeInt16LE(Math.max(-32768, Math.min(32767, value)), i * 2);
+    }
+
+    return output;
   }
 
   /**

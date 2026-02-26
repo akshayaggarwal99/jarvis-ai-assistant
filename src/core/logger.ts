@@ -85,9 +85,16 @@ export class Logger {
 
   private static addToBuffer(level: string, message: string, args: any[]) {
     const timestamp = new Date().toISOString();
-    const argsStr = args.length > 0 ? ' ' + args.map(arg =>
-      typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
-    ).join(' ') : '';
+    const argsStr = args.length > 0 ? ' ' + args.map(arg => {
+      if (arg instanceof Error) {
+        return JSON.stringify({
+          name: arg.name,
+          message: arg.message,
+          stack: arg.stack
+        });
+      }
+      return typeof arg === 'object' ? JSON.stringify(arg) : String(arg);
+    }).join(' ') : '';
     const logEntry = `[${timestamp}] ${level}: ${message}${argsStr}`;
 
     this.logBuffer.push(logEntry);
@@ -142,7 +149,15 @@ export class Logger {
       console.error(`❌ ${messageStr}`, error);
     }
     if (this.fileLoggingEnabled) {
-      this.addToBuffer('ERROR', messageStr, error ? [error] : []);
+      if (error instanceof Error) {
+        this.addToBuffer('ERROR', messageStr, [{
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        }]);
+      } else {
+        this.addToBuffer('ERROR', messageStr, error ? [error] : []);
+      }
     }
   }
 

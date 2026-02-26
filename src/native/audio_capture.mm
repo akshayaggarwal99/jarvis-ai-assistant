@@ -5,6 +5,9 @@
 #include <atomic>
 #include <mutex>
 
+static std::atomic<int> currentSampleRate{16000};
+static std::atomic<int> lastLoggedSampleRate{0};
+
 @interface AudioCaptureManager : NSObject <AVCaptureAudioDataOutputSampleBufferDelegate>
 @property (nonatomic, strong) AVCaptureSession *captureSession;
 @property (nonatomic, strong) AVCaptureDeviceInput *audioInput;
@@ -33,6 +36,7 @@
     
     // Request microphone permission synchronously if possible
     AVAuthorizationStatus status = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio];
+    NSLog(@"[NativeAudio][Diagnostics] Mic authorization status: %ld", (long)status);
     if (status == AVAuthorizationStatusNotDetermined) {
         // Need to request permission asynchronously
         _isSettingUp = YES;
@@ -46,6 +50,7 @@
         }];
         return YES; // Will setup async
     } else if (status != AVAuthorizationStatusAuthorized) {
+        NSLog(@"[NativeAudio][Diagnostics] Mic permission denied or restricted");
         return NO; // Permission denied
     }
     
@@ -58,6 +63,7 @@
     // Get default audio input device
     AVCaptureDevice *audioDevice = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeAudio];
     if (!audioDevice) return NO;
+    NSLog(@"[NativeAudio][Diagnostics] Selected input device: name=%@ uniqueID=%@ modelID=%@", audioDevice.localizedName, audioDevice.uniqueID, audioDevice.modelID);
     
     NSError *error;
     _audioInput = [AVCaptureDeviceInput deviceInputWithDevice:audioDevice error:&error];
@@ -76,13 +82,13 @@
     // Configure audio settings for Deepgram: 16kHz, 16-bit PCM, mono (Linear16 format)
     NSDictionary *audioSettings = @{
         AVFormatIDKey: @(kAudioFormatLinearPCM),
-        AVSampleRateKey: @(16000.0),           // 16kHz optimal for speech recognition
         AVNumberOfChannelsKey: @(1),           // Mono
         AVLinearPCMBitDepthKey: @(16),         // 16-bit
         AVLinearPCMIsFloatKey: @(NO),          // Integer samples
         AVLinearPCMIsBigEndianKey: @(NO),      // Little endian
         AVLinearPCMIsNonInterleaved: @(NO)     // Interleaved
     };
+    NSLog(@"[NativeAudio][Diagnostics] Requested output format: LinearPCM mono 16-bit, native sample rate");
     
     [_audioOutput setAudioSettings:audioSettings];
     
@@ -95,6 +101,7 @@
     // Start session
     [_captureSession startRunning];
     _isCapturing = YES;
+    NSLog(@"[NativeAudio][Diagnostics] Capture session started");
     
     return YES;
 }
@@ -122,6 +129,21 @@
        fromConnection:(AVCaptureConnection *)connection {
     
     if (!_audioDataCallback || !_isCapturing) return;
+
+    CMFormatDescriptionRef formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer);
+    if (formatDescription) {
+        const AudioStreamBasicDescription *streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription);
+        if (streamDescription && streamDescription->mSampleRate > 0) {
+            int detectedRate = (int)(streamDescription->mSampleRate + 0.5);
+            currentSampleRate.store(detectedRate);
+
+            int lastRate = lastLoggedSampleRate.load();
+            if (lastRate != detectedRate) {
+                lastLoggedSampleRate.store(detectedRate);
+                NSLog(@"[NativeAudio][Diagnostics] Detected input stream format: sampleRate=%d channels=%u bitsPerChannel=%u formatID=%u", detectedRate, (unsigned int)streamDescription->mChannelsPerFrame, (unsigned int)streamDescription->mBitsPerChannel, (unsigned int)streamDescription->mFormatID);
+            }
+        }
+    }
     
     // Convert audio buffer to PCM data with proper memory management
     CMBlockBufferRef blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer);
@@ -257,6 +279,11 @@ public:
         BOOL capturing = audioCaptureManager ? audioCaptureManager.isCapturing : NO;
         return Napi::Boolean::New(env, capturing);
     }
+
+    static Napi::Value GetCurrentSampleRate(const Napi::CallbackInfo& info) {
+        Napi::Env env = info.Env();
+        return Napi::Number::New(env, currentSampleRate.load());
+    }
 };
 
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
@@ -266,6 +293,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
                 Napi::Function::New(env, AudioCaptureWorker::StopCapture));
     exports.Set(Napi::String::New(env, "isCapturing"), 
                 Napi::Function::New(env, AudioCaptureWorker::IsCapturing));
+    exports.Set(Napi::String::New(env, "getCurrentSampleRate"),
+                Napi::Function::New(env, AudioCaptureWorker::GetCurrentSampleRate));
     return exports;
 }
 

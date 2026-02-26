@@ -295,14 +295,7 @@ export class SherpaOnnxTranscriber {
         try {
             Logger.info(`🦜 [Sherpa] Preparing audio from buffer (${audioBuffer.length} bytes)...`);
 
-            // Create temp file for robust conversion
-            const tempPath = path.join(app.getPath('temp'), `sherpa_buffer_${Date.now()}.wav`);
-
-            const wavBuffer = this.pcmToWav(audioBuffer, 16000, 1, 16);
-            fs.writeFileSync(tempPath, wavBuffer);
-
-            const samples = await this.prepareAudio(tempPath);
-            fs.unlinkSync(tempPath);
+            const samples = this.pcm16MonoToFloat32(audioBuffer);
 
             if (!samples) {
                 Logger.info('🦜 [Sherpa] No samples after audio preparation');
@@ -324,6 +317,28 @@ export class SherpaOnnxTranscriber {
             Logger.error('🦜 [Sherpa] Buffer transcription failed:', error);
             return null;
         }
+    }
+
+    private pcm16MonoToFloat32(audioBuffer: Buffer): Float32Array | null {
+        if (!audioBuffer || audioBuffer.length < 2) {
+            return null;
+        }
+
+        const alignedLength = audioBuffer.length - (audioBuffer.length % 2);
+        if (alignedLength < 2) {
+            return null;
+        }
+
+        const sampleCount = alignedLength / 2;
+        const samples = new Float32Array(sampleCount);
+
+        for (let i = 0; i < sampleCount; i++) {
+            const int16 = audioBuffer.readInt16LE(i * 2);
+            samples[i] = int16 / 32768.0;
+        }
+
+        Logger.info(`🦜 [Sherpa][Diagnostics] Converted PCM buffer to ${sampleCount} float samples`);
+        return samples;
     }
 
     private runTranscription(samples: Float32Array): string | null {
