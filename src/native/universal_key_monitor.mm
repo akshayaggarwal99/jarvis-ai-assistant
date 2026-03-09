@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <map>
 #include <napi.h>
+#include <sstream>
 #include <string>
 
 static id globalMonitor = nil;
@@ -36,26 +37,39 @@ static const std::map<std::string, NSEventModifierFlags> keyFlags = {
     {"shift", NSEventModifierFlagShift}};
 
 // Parse multi-key combinations like "cmd+ctrl", "cmd+option", etc.
-NSEventModifierFlags parseKeyCombination(const std::string& keyCombo) {
+NSEventModifierFlags parseKeyCombination(const std::string& keyCombo, bool& hasInvalidKeys) {
     NSEventModifierFlags combined = 0;
+    hasInvalidKeys = false;
     
-    // Split by '+' delimiter
-    std::string remaining = keyCombo;
-    size_t pos = 0;
+    // Check if this is a combination (contains '+')
+    bool isCombination = (keyCombo.find('+') != std::string::npos);
     
-    while ((pos = remaining.find('+')) != std::string::npos || !remaining.empty()) {
-        std::string key;
-        if (pos != std::string::npos) {
-            key = remaining.substr(0, pos);
-            remaining = remaining.substr(pos + 1);
-        } else {
-            key = remaining;
-            remaining = "";
+    // For combinations, check for trailing/leading '+' or empty parts (++, +key, key+)
+    if (isCombination) {
+        if (keyCombo.empty() || keyCombo.front() == '+' || keyCombo.back() == '+') {
+            hasInvalidKeys = true;
+            return 0;
         }
-        
+        if (keyCombo.find("++") != std::string::npos) {
+            hasInvalidKeys = true;
+            return 0;
+        }
+    }
+    
+    // Split by '+' delimiter and process each part
+    std::stringstream ss(keyCombo);
+    std::string key;
+    
+    while (std::getline(ss, key, '+')) {
         // Trim whitespace
         key.erase(0, key.find_first_not_of(" \t"));
         key.erase(key.find_last_not_of(" \t") + 1);
+        
+        // After trimming, empty keys are invalid
+        if (key.empty()) {
+            hasInvalidKeys = true;
+            continue;
+        }
         
         // Convert to lowercase for consistent matching
         std::transform(key.begin(), key.end(), key.begin(), ::tolower);
@@ -64,9 +78,15 @@ NSEventModifierFlags parseKeyCombination(const std::string& keyCombo) {
         auto it = keyFlags.find(key);
         if (it != keyFlags.end()) {
             combined |= it->second;
+        } else {
+            // Invalid key name found
+            hasInvalidKeys = true;
         }
-        
-        if (remaining.empty()) break;
+    }
+    
+    // For combinations, all parts must be valid
+    if (isCombination && hasInvalidKeys) {
+        return 0;
     }
     
     return combined;
@@ -221,7 +241,8 @@ Napi::Value StartMonitoring(const Napi::CallbackInfo &info) {
   std::string keyName = info[0].As<Napi::String>().Utf8Value();
 
   // Parse the key combination to get required modifiers
-  NSEventModifierFlags parsedModifiers = parseKeyCombination(keyName);
+  bool hasInvalidKeys = false;
+  NSEventModifierFlags parsedModifiers = parseKeyCombination(keyName, hasInvalidKeys);
 
   // For single keys, validate against known keys
   if (keyName.find('+') == std::string::npos) {
@@ -233,11 +254,11 @@ Napi::Value StartMonitoring(const Napi::CallbackInfo &info) {
       return env.Null();
     }
   } else {
-    // For combinations, ensure at least one valid modifier was parsed
-    if (parsedModifiers == 0) {
+    // For combinations, ensure no invalid keys and at least one valid modifier
+    if (hasInvalidKeys || parsedModifiers == 0) {
       Napi::TypeError::New(
           env,
-          "Invalid key combination. Use combinations like 'cmd+ctrl', 'cmd+option', 'ctrl+option'")
+          "Invalid key combination. Use only valid keys: fn, option, control, command, ctrl, cmd, shift. Example: 'cmd+ctrl', 'cmd+option'")
           .ThrowAsJavaScriptException();
       return env.Null();
     }
