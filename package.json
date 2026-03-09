@@ -93,7 +93,6 @@
     "openai": "^5.5.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "sherpa-onnx-darwin-x64": "1.12.24",
     "sherpa-onnx-node": "^1.12.23",
     "utf-8-validate": "^6.0.3",
     "webpack": "^5.89.0",
