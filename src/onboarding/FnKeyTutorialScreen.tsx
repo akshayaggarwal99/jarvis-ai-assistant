@@ -17,6 +17,8 @@ const FnKeyTutorialScreen: React.FC<FnKeyTutorialScreenProps> = ({ onNext }) => 
     { label: 'Fn Key', value: 'fn', description: 'Default function key (may not work on external keyboards)' },
     { label: 'Cmd + Ctrl', value: 'cmd+ctrl', description: '🎯 Best for external keyboards - works everywhere!' },
     { label: 'Cmd + Option', value: 'cmd+option', description: '🎯 Perfect for external keyboards - reliable choice' },
+    { label: 'Cmd + D', value: 'cmd+d', description: '⭐ Letter key combo - familiar keyboard shortcut style' },
+    { label: 'Ctrl + Space', value: 'ctrl+space', description: '⭐ Space combo - easy one-hand activation' },
     { label: 'Ctrl Key', value: 'ctrl', description: 'Control key (single key alternative)' },
     { label: 'Option Key', value: 'option', description: 'Option key (single key alternative)' },
   ];

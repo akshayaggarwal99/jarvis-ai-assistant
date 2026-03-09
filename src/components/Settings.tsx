@@ -143,6 +143,12 @@ const Settings: React.FC = () => {
     { key: 'cmd+shift', label: 'Command + Shift', description: 'Multi-key combination - works on all keyboards' },
     { key: 'ctrl+shift', label: 'Control + Shift', description: 'Multi-key combination - reliable option' },
     { key: 'option+shift', label: 'Option + Shift', description: 'Multi-key combination - alternative choice' },
+    
+    // Letter key combinations (familiar keyboard shortcuts!)
+    { key: 'cmd+d', label: 'Command + D', description: '⭐ Letter key combo - like familiar app shortcuts' },
+    { key: 'cmd+k', label: 'Command + K', description: '⭐ Letter key combo - customizable hotkey' },
+    { key: 'ctrl+space', label: 'Control + Space', description: '⭐ Space combo - easy to press with one hand' },
+    { key: 'cmd+space', label: 'Command + Space', description: '⭐ Space combo - spotlight-style activation' },
   ];
 
   const languages = [

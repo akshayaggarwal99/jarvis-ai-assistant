@@ -251,11 +251,11 @@ async function initializeJarvis() {
     // Preload Whisper model for faster transcription (runs in background)
     const appSettingsForWhisper = AppSettingsService.getInstance();
     const whisperSettings = appSettingsForWhisper.getSettings();
-    if (whisperSettings.useLocalWhisper && whisperSettings.localWhisperModel) {
+    if (whisperSettings.useLocalModel && whisperSettings.localModelId) {
       const whisperTranscriber = new LocalWhisperTranscriber();
-      whisperTranscriber.preloadModel(whisperSettings.localWhisperModel).then(success => {
+      whisperTranscriber.preloadModel(whisperSettings.localModelId).then(success => {
         if (success) {
-          Logger.success(`🎤 Whisper model '${whisperSettings.localWhisperModel}' preloaded for fast transcription`);
+          Logger.success(`🎤 Whisper model '${whisperSettings.localModelId}' preloaded for fast transcription`);
         } else {
           Logger.info('🎤 Whisper model preload skipped (model not downloaded)');
         }
@@ -744,8 +744,8 @@ function startHotkeyMonitoring() {
   Logger.info(`⚙ [Hotkey] Current hotkey from settings: ${currentHotkey}`);
 
   // Calculate if streaming should be enabled
-  const shouldUseStreaming = allSettings.useDeepgramStreaming && !allSettings.useLocalWhisper;
-  Logger.info(`⚙ [Hotkey] Streaming decision: useDeepgramStreaming=${allSettings.useDeepgramStreaming}, useLocalWhisper=${allSettings.useLocalWhisper}, shouldUseStreaming=${shouldUseStreaming}`);
+  const shouldUseStreaming = allSettings.useDeepgramStreaming && !allSettings.useLocalModel;
+  Logger.info(`⚙ [Hotkey] Streaming decision: useDeepgramStreaming=${allSettings.useDeepgramStreaming}, useLocalModel=${allSettings.useLocalModel}, shouldUseStreaming=${shouldUseStreaming}`);
 
   // Initialize push-to-talk service (same for all keys)
   pushToTalkService = new PushToTalkService(
@@ -1704,12 +1704,12 @@ app.whenReady().then(async () => {
   (async () => {
     try {
       const whisperSettings = AppSettingsService.getInstance().getSettings();
-      if (whisperSettings.useLocalWhisper && whisperSettings.localWhisperModel) {
+      if (whisperSettings.useLocalModel && whisperSettings.localModelId) {
         Logger.info('🎤 [Startup] Early preload: Starting whisper model warmup...');
         const whisperTranscriber = new LocalWhisperTranscriber();
-        const success = await whisperTranscriber.preloadModel(whisperSettings.localWhisperModel);
+        const success = await whisperTranscriber.preloadModel(whisperSettings.localModelId);
         if (success) {
-          Logger.success(`🎤 [Startup] Early preload: Whisper model '${whisperSettings.localWhisperModel}' ready!`);
+          Logger.success(`🎤 [Startup] Early preload: Whisper model '${whisperSettings.localModelId}' ready!`);
         } else {
           Logger.info('🎤 [Startup] Early preload: Model not downloaded, skipping');
         }
