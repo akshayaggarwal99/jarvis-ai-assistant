@@ -19,6 +19,8 @@ static Napi::ThreadSafeFunction tsfn;
 static bool tsfnInitialized = false;
 static std::string monitoredKey = "fn";
 static bool keyPressed = false;
+static NSEventModifierFlags requiredModifiers = 0;
+static NSEventModifierFlags ignoredModifiers = NSEventModifierFlagCapsLock | NSEventModifierFlagNumericPad | NSEventModifierFlagHelp;
 // static CFAbsoluteTime lastFnKeyTime = 0; // Unused - commented out
 // static const CFTimeInterval DOUBLE_TAP_THRESHOLD = 0.5; // Unused - commented
 // out
@@ -30,6 +32,43 @@ static const std::map<std::string, NSEventModifierFlags> keyFlags = {
     {"control", NSEventModifierFlagControl},
     {"command", NSEventModifierFlagCommand},
     {"shift", NSEventModifierFlagShift}};
+
+// Parse multi-key combinations like "cmd+ctrl", "cmd+option", etc.
+NSEventModifierFlags parseKeyCombination(const std::string& keyCombo) {
+    NSEventModifierFlags combined = 0;
+    
+    // Split by '+' delimiter
+    std::string remaining = keyCombo;
+    size_t pos = 0;
+    
+    while ((pos = remaining.find('+')) != std::string::npos || !remaining.empty()) {
+        std::string key;
+        if (pos != std::string::npos) {
+            key = remaining.substr(0, pos);
+            remaining = remaining.substr(pos + 1);
+        } else {
+            key = remaining;
+            remaining = "";
+        }
+        
+        // Trim whitespace
+        key.erase(0, key.find_first_not_of(" \t"));
+        key.erase(key.find_last_not_of(" \t") + 1);
+        
+        // Convert to lowercase for consistent matching
+        std::transform(key.begin(), key.end(), key.begin(), ::tolower);
+        
+        // Add flag for this key
+        auto it = keyFlags.find(key);
+        if (it != keyFlags.end()) {
+            combined |= it->second;
+        }
+        
+        if (remaining.empty()) break;
+    }
+    
+    return combined;
+}
 
 void handleKeyEvent(bool isKeyDown) {
   if (tsfnInitialized) {
@@ -75,7 +114,7 @@ similar)
 }
 */
 
-// AGGRESSIVE CGEventTap callback that COMPLETELY SUPPRESSES function key
+// AGGRESSIVE CGEventTap callback that handles both single keys and multi-key combinations
 CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type,
                             CGEventRef event, void *refcon) {
   if (type == kCGEventTapDisabledByTimeout ||
@@ -84,13 +123,38 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type,
     return event;
   }
 
-  if (monitoredKey == "fn") {
-    // Handle function key modifier flag changes (most reliable)
-    if (type == kCGEventFlagsChanged) {
-      CGEventFlags flags = CGEventGetFlags(event);
+  // Handle modifier flag changes for all monitored keys
+  if (type == kCGEventFlagsChanged) {
+    CGEventFlags flags = CGEventGetFlags(event);
+    
+    // Mask out flags we want to ignore (Caps Lock, Num Pad, Help, etc.)
+    flags = flags & ~ignoredModifiers;
+    
+    // For multi-key combinations, check if all required modifiers are pressed (and no extras)
+    if (requiredModifiers != 0) {
+      bool isPressed = (flags & requiredModifiers) == requiredModifiers;
+      
+      // For combinations, ensure ONLY the required modifiers are pressed (no extras)
+      // Exception: Allow function key even if not explicitly required (for compatibility)
+      NSEventModifierFlags allowedExtra = NSEventModifierFlagFunction;
+      NSEventModifierFlags extraFlags = flags & ~requiredModifiers & ~allowedExtra;
+      
+      bool hasValidCombination = isPressed && (extraFlags == 0);
+      
+      // OPTIMIZED: Only fire events on state changes
+      if (hasValidCombination != keyPressed) {
+        keyPressed = hasValidCombination;
+        handleKeyEvent(hasValidCombination);
+      }
+      
+      // For multi-key combinations, don't suppress - let system handle normally
+      return event;
+    }
+    
+    // Legacy single function key handling (for backwards compatibility)
+    if (monitoredKey == "fn") {
       bool isFnPressed = (flags & kCGEventFlagMaskSecondaryFn) != 0;
-      // Check if this is ONLY a function key event or if other modifiers are
-      // involved
+      // Check if this is ONLY a function key event or if other modifiers are involved
       bool hasOtherModifiers =
           (flags & (kCGEventFlagMaskCommand | kCGEventFlagMaskShift |
                     kCGEventFlagMaskControl | kCGEventFlagMaskAlternate)) != 0;
@@ -108,17 +172,16 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type,
 
       return event; // Pass through events with other modifiers
     }
+  }
 
-    // OPTIMIZED: Suppress raw keyboard events for function key
-    if (type == kCGEventKeyDown || type == kCGEventKeyUp) {
-      CGKeyCode keyCode = (CGKeyCode)CGEventGetIntegerValueField(
-          event, kCGKeyboardEventKeycode);
+  // OPTIMIZED: Suppress raw keyboard events for function key only (not combinations)
+  if (monitoredKey == "fn" && (type == kCGEventKeyDown || type == kCGEventKeyUp)) {
+    CGKeyCode keyCode = (CGKeyCode)CGEventGetIntegerValueField(
+        event, kCGKeyboardEventKeycode);
 
-      // Function key codes (various possible codes)
-      if (keyCode == 63 || keyCode == 179 ||
-          keyCode == 0x3F) { // Common fn key codes
-        return NULL;         // Block completely - no logging for performance
-      }
+    // Function key codes (various possible codes)
+    if (keyCode == 63 || keyCode == 179) { // Common fn key codes
+      return NULL; // Block completely - no logging for performance
     }
   }
 
@@ -155,12 +218,27 @@ Napi::Value StartMonitoring(const Napi::CallbackInfo &info) {
 
   std::string keyName = info[0].As<Napi::String>().Utf8Value();
 
-  // Validate key name
-  if (keyFlags.find(keyName) == keyFlags.end()) {
-    Napi::TypeError::New(
-        env, "Unsupported key. Supported keys: fn, option, control, command")
-        .ThrowAsJavaScriptException();
-    return env.Null();
+  // Parse the key combination to get required modifiers
+  NSEventModifierFlags parsedModifiers = parseKeyCombination(keyName);
+
+  // For single keys, validate against known keys
+  if (keyName.find('+') == std::string::npos) {
+    if (keyFlags.find(keyName) == keyFlags.end()) {
+      Napi::TypeError::New(
+          env,
+          "Unsupported key. Supported keys: fn, option, control, command, shift, or combinations like 'cmd+ctrl', 'cmd+option'")
+          .ThrowAsJavaScriptException();
+      return env.Null();
+    }
+  } else {
+    // For combinations, ensure at least one valid modifier was parsed
+    if (parsedModifiers == 0) {
+      Napi::TypeError::New(
+          env,
+          "Invalid key combination. Use combinations like 'cmd+ctrl', 'cmd+option', 'ctrl+option'")
+          .ThrowAsJavaScriptException();
+      return env.Null();
+    }
   }
 
   // Stop existing monitoring if active
@@ -185,37 +263,32 @@ Napi::Value StartMonitoring(const Napi::CallbackInfo &info) {
     runLoopSource = NULL;
   }
 
-  // OPTIMIZED: Pre-configure system to avoid runtime calls
-  if (keyName == "fn") {
-    // Only log once for debugging
-    NSLog(@"Function key monitoring enabled - emoji picker suppression active");
-  }
-
-  // Set the key to monitor
+  // Set the key to monitor and required modifiers
   monitoredKey = keyName;
+  requiredModifiers = parsedModifiers;
   keyPressed = false;
+
+  NSLog(@"Starting key monitoring for: %s (modifiers: 0x%lx)", 
+        keyName.c_str(), (unsigned long)requiredModifiers);
 
   // Create thread-safe function for callback
   tsfn = Napi::ThreadSafeFunction::New(env, info[1].As<Napi::Function>(),
                                        "UniversalKeyCallback", 0, 1);
   tsfnInitialized = true;
 
-  // Get the modifier flag for this key
-  auto it = keyFlags.find(keyName);
-  NSEventModifierFlags targetFlag = it->second;
+  // Use CGEventTap for all key monitoring (single keys and combinations)
+  bool useCGEventTap = true;
 
-  // For function key, use AGGRESSIVE CGEventTap that catches ALL events
-  if (keyName == "fn") {
-    // Create an aggressive event tap that intercepts EVERYTHING related to
-    // function key
+  if (useCGEventTap) {
+    // Create an event tap for modifier flag changes
     eventTap = CGEventTapCreate(
         kCGSessionEventTap,       // Session event tap (more compatible)
         kCGHeadInsertEventTap,    // Insert at head for priority
         kCGEventTapOptionDefault, // Default options
-        CGEventMaskBit(kCGEventFlagsChanged) | CGEventMaskBit(kCGEventKeyDown) |
-            CGEventMaskBit(kCGEventKeyUp), // Monitor flags AND raw key events
-        eventTapCallback,                  // Callback function
-        NULL                               // User data
+        CGEventMaskBit(kCGEventFlagsChanged) | 
+        (keyName == "fn" ? (CGEventMaskBit(kCGEventKeyDown) | CGEventMaskBit(kCGEventKeyUp)) : 0),
+        eventTapCallback,         // Callback function
+        NULL                      // User data
     );
 
     if (eventTap) {
@@ -228,60 +301,73 @@ Napi::Value StartMonitoring(const Napi::CallbackInfo &info) {
       // Enable the event tap
       CGEventTapEnable(eventTap, true);
 
-      NSLog(@"AGGRESSIVE function key monitoring enabled - will SUPPRESS all "
-            @"fn events to prevent emoji picker");
+      if (keyName == "fn") {
+        NSLog(@"Function key monitoring enabled - emoji picker suppression active");
+      } else if (keyName.find('+') != std::string::npos) {
+        NSLog(@"Multi-key combination monitoring enabled for: %s", keyName.c_str());
+      } else {
+        NSLog(@"Single modifier key monitoring enabled for: %s", keyName.c_str());
+      }
     } else {
-      NSLog(@"Failed to create function key event tap");
+      NSLog(@"Failed to create event tap for key: %s", keyName.c_str());
+      return Napi::Boolean::New(env, false);
     }
   }
 
-  // Also use NSEvent monitoring as backup (for non-fn keys only)
-  if (keyName != "fn") {
-    // Monitor ALL event types globally (even when app is not active)
-    globalMonitor = [NSEvent
-        addGlobalMonitorForEventsMatchingMask:(NSEventMaskFlagsChanged |
-                                               NSEventMaskKeyDown |
-                                               NSEventMaskKeyUp)
-                                      handler:^(NSEvent *event) {
-                                        if ([event type] ==
-                                            NSEventTypeFlagsChanged) {
-                                          NSEventModifierFlags flags =
-                                              [event modifierFlags];
-                                          bool currentKeyState =
-                                              (flags & targetFlag) != 0;
+  // Fallback NSEvent monitoring for single keys (backup method)
+  if (keyName.find('+') == std::string::npos && keyName != "fn") {
+    auto it = keyFlags.find(keyName);
+    if (it != keyFlags.end()) {
+      NSEventModifierFlags targetFlag = it->second;
+      
+      // Monitor ALL event types globally (even when app is not active)
+      globalMonitor = [NSEvent
+          addGlobalMonitorForEventsMatchingMask:(NSEventMaskFlagsChanged |
+                                                 NSEventMaskKeyDown |
+                                                 NSEventMaskKeyUp)
+                                        handler:^(NSEvent *event) {
+                                          if ([event type] ==
+                                              NSEventTypeFlagsChanged) {
+                                            NSEventModifierFlags flags =
+                                                [event modifierFlags];
+                                            bool currentKeyState =
+                                                (flags & targetFlag) != 0;
 
-                                          if (currentKeyState != keyPressed) {
-                                            keyPressed = currentKeyState;
-                                            handleKeyEvent(currentKeyState);
+                                            // Only fire for single key when no combinations are active
+                                            if (requiredModifiers == targetFlag && currentKeyState != keyPressed) {
+                                              keyPressed = currentKeyState;
+                                              handleKeyEvent(currentKeyState);
+                                            }
                                           }
-                                        }
-                                      }];
+                                        }];
 
-    // Monitor local events (when app is active)
-    localMonitor = [NSEvent
-        addLocalMonitorForEventsMatchingMask:(NSEventMaskFlagsChanged |
-                                              NSEventMaskKeyDown |
-                                              NSEventMaskKeyUp)
-                                     handler:^NSEvent *(NSEvent *event) {
-                                       NSEventType eventType = [event type];
-                                       NSEventModifierFlags flags =
-                                           [event modifierFlags];
+      // Monitor local events (when app is active)
+      localMonitor = [NSEvent
+          addLocalMonitorForEventsMatchingMask:(NSEventMaskFlagsChanged |
+                                                NSEventMaskKeyDown |
+                                                NSEventMaskKeyUp)
+                                       handler:^NSEvent *(NSEvent *event) {
+                                         NSEventType eventType = [event type];
+                                         NSEventModifierFlags flags =
+                                             [event modifierFlags];
 
-                                       // Handle modifier flag changes
-                                       if (eventType ==
-                                           NSEventTypeFlagsChanged) {
-                                         bool currentKeyState =
-                                             (flags & targetFlag) != 0;
+                                         // Handle modifier flag changes
+                                         if (eventType ==
+                                             NSEventTypeFlagsChanged) {
+                                           bool currentKeyState =
+                                               (flags & targetFlag) != 0;
 
-                                         if (currentKeyState != keyPressed) {
-                                           keyPressed = currentKeyState;
-                                           handleKeyEvent(currentKeyState);
+                                           // Only fire for single key when no combinations are active
+                                           if (requiredModifiers == targetFlag && currentKeyState != keyPressed) {
+                                             keyPressed = currentKeyState;
+                                             handleKeyEvent(currentKeyState);
+                                           }
                                          }
-                                       }
 
-                                       return event; // Allow other events for
-                                                     // non-fn keys
-                                     }];
+                                         return event; // Allow other events for
+                                                       // non-fn keys
+                                       }];
+    }
   }
 
   return Napi::Boolean::New(env, true);
@@ -315,8 +401,6 @@ Napi::Value StopMonitoring(const Napi::CallbackInfo &info) {
   if (monitoredKey == "fn") {
     system("defaults delete com.apple.HIToolbox AppleFnUsageType 2>/dev/null "
            "|| true");
-    system("defaults write -g NSAutomaticSpellingCorrectionEnabled -bool true");
-    system("defaults write -g NSAutomaticTextCompletionEnabled -bool true");
   }
 
   keyPressed = false;
@@ -334,8 +418,22 @@ Napi::Value GetSupportedKeys(const Napi::CallbackInfo &info) {
   Napi::Array result = Napi::Array::New(env);
 
   int index = 0;
+  
+  // Add single keys
   for (const auto &pair : keyFlags) {
     result[index++] = Napi::String::New(env, pair.first);
+  }
+  
+  // Add common multi-key combinations
+  std::vector<std::string> combinations = {
+    "cmd+ctrl", "cmd+option", "cmd+shift",
+    "ctrl+option", "ctrl+shift", 
+    "option+shift",
+    "cmd+ctrl+shift", "cmd+option+shift", "ctrl+option+shift"
+  };
+  
+  for (const auto &combo : combinations) {
+    result[index++] = Napi::String::New(env, combo);
   }
 
   return result;

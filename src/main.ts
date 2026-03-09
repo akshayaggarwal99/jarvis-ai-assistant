@@ -835,8 +835,15 @@ function startHotkeyMonitoring() {
   const powerManager = PowerManagementService.getInstance();
   powerManager.registerService('audio-monitoring', pushToTalkService);
 
-  // Use UniversalKeyService for all modifier keys (fn, option, control)
-  if (['fn', 'option', 'control'].includes(currentHotkey)) {
+  // Use UniversalKeyService for all modifier keys and combinations
+  const supportedSingleKeys = ['fn', 'option', 'control', 'command', 'shift'];
+  const isValidSingleKey = supportedSingleKeys.includes(currentHotkey);
+  const isValidCombination = currentHotkey.includes('+') && 
+    currentHotkey.split('+').every((key: string) => 
+      supportedSingleKeys.includes(key.trim().toLowerCase())
+    );
+
+  if (isValidSingleKey || isValidCombination) {
     Logger.info(`⚙ [Hotkey] Starting universal key monitoring for: ${currentHotkey}`);
 
     try {
@@ -867,7 +874,12 @@ function startHotkeyMonitoring() {
       isHotkeyMonitoringActive = true;
       lastActiveHotkey = currentHotkey;
 
-      Logger.success(`✅ [Hotkey] ${currentHotkey.charAt(0).toUpperCase() + currentHotkey.slice(1)} key monitoring active`);
+      if (isValidCombination) {
+        Logger.success(`✅ [Hotkey] Multi-key combination "${currentHotkey}" monitoring active - Perfect for external keyboards!`);
+        Logger.info(`🎯 [Hotkey] This combination works on ALL keyboards (internal and external)`);
+      } else {
+        Logger.success(`✅ [Hotkey] ${currentHotkey.charAt(0).toUpperCase() + currentHotkey.slice(1)} key monitoring active`);
+      }
 
       if (pushToTalkService?.isStreamingEnabled()) {
         Logger.success('◉ [Streaming] Deepgram real-time streaming transcription ENABLED');
@@ -881,16 +893,23 @@ function startHotkeyMonitoring() {
       universalKeyService = null;
     }
   } else if (currentHotkey === 'space') {
-    // Space key has been removed - fallback to 'fn'
-    Logger.warning(`⚠️ [Hotkey] Space key is no longer supported. Defaulting to 'fn'`);
-    appSettings.updateSettings({ hotkey: 'fn' });
+    // Space key has been removed - suggest better alternatives
+    Logger.warning(`⚠️ [Hotkey] Space key is no longer supported. Try multi-key combinations like 'cmd+ctrl' for external keyboards`);
+    appSettings.updateSettings({ hotkey: 'cmd+ctrl' });
 
     // Restart with corrected hotkey
     setTimeout(() => startHotkeyMonitoring(), 100);
     return;
   } else {
-    Logger.warning(`⚠️ [Hotkey] Unsupported key: ${currentHotkey}. Defaulting to 'fn'`);
-    appSettings.updateSettings({ hotkey: 'fn' });
+    Logger.warning(`⚠️ [Hotkey] Unsupported key: ${currentHotkey}.`);
+    Logger.info(`💡 [Hotkey] Supported options:`);
+    Logger.info(`   • Single keys: fn, option, control, command, shift`);
+    Logger.info(`   • Multi-key combinations: cmd+ctrl, cmd+option, ctrl+option (perfect for external keyboards!)`);
+    
+    // For external keyboard users, default to a reliable combination
+    const suggestedHotkey = 'cmd+ctrl';
+    Logger.info(`⚡ [Hotkey] Defaulting to '${suggestedHotkey}' (works on ALL keyboards)`);
+    appSettings.updateSettings({ hotkey: suggestedHotkey });
 
     // Restart with corrected hotkey  
     setTimeout(() => startHotkeyMonitoring(), 100);

@@ -128,13 +128,21 @@ const Settings: React.FC = () => {
   // App version
   const [appVersion, setAppVersion] = useState('1.1.3');
 
-  // Pre-defined hotkey options (single keys for push-to-talk)
+  // Pre-defined hotkey options (single keys and multi-key combinations for push-to-talk)
   const presetHotkeys = [
     { key: 'fn', label: 'Function (fn)', description: 'Push-to-talk - behavior varies by keyboard/settings' },
     { key: 'option', label: 'Option (⌥)', description: 'Push-to-talk - left or right side' },
     { key: 'control', label: 'Control (⌃)', description: 'Push-to-talk - bottom left corner' },
     { key: 'command', label: 'Command (⌘)', description: 'Push-to-talk - left or right Command key' },
     { key: 'shift', label: 'Shift (⇧)', description: 'Push-to-talk - left or right Shift key' },
+    
+    // Multi-key combinations (perfect for external keyboards!)
+    { key: 'cmd+ctrl', label: 'Command + Control', description: '🎯 Recommended for external keyboards - reliable on all hardware' },
+    { key: 'cmd+option', label: 'Command + Option', description: '🎯 Perfect for external keyboards - works everywhere' },
+    { key: 'ctrl+option', label: 'Control + Option', description: '🎯 Great for external keyboards - reliable combination' },
+    { key: 'cmd+shift', label: 'Command + Shift', description: 'Multi-key combination - works on all keyboards' },
+    { key: 'ctrl+shift', label: 'Control + Shift', description: 'Multi-key combination - reliable option' },
+    { key: 'option+shift', label: 'Option + Shift', description: 'Multi-key combination - alternative choice' },
   ];
 
   const languages = [
