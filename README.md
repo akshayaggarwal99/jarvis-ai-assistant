@@ -160,6 +160,9 @@ Open issues, vote, or drop crazy ideas → [github.com/.../issues](https://githu
 
 Jarvis is a community project. If you're a developer and want to help build the future of local-first AI, check out our [Contributing Guidelines](CONTRIBUTING.md).
 
+### Troubleshooting docs
+If you're working on voice workflow reliability, start with the [Voice Agent Reliability Guide](docs/troubleshooting/voice-agent-reliability.md).
+
 ## Wanna help?
 
 Every star pushes this higher so more people discover they don't need another subscription.
