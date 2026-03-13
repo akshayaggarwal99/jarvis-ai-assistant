@@ -2003,7 +2003,7 @@ const Settings: React.FC = () => {
               Select a key to use for push-to-talk dictation. Hold the key down to start recording, release to stop.
             </p>
 
-            <div className="space-y-3">
+            <div className="space-y-3 overflow-y-auto max-h-[60vh] pr-2">
               {presetHotkeys.map((preset) => (
                 <label key={preset.key} className={`flex items-center space-x-3 p-3 ${theme.radius.xl} ${theme.glass.secondary} transition-all duration-200 cursor-pointer border ${hotkey === preset.key
                   ? `${theme.glass.active} border-white/30 ${theme.shadow.lg}`

@@ -8,9 +8,9 @@ DEFS_Debug := \
 	'-DUSING_V8_SHARED=1' \
 	'-DV8_DEPRECATION_WARNINGS=1' \
 	'-D_GLIBCXX_USE_CXX11_ABI=1' \
+	'-D_FILE_OFFSET_BITS=64' \
 	'-D_DARWIN_USE_64_BIT_INODE=1' \
 	'-D_LARGEFILE_SOURCE' \
-	'-D_FILE_OFFSET_BITS=64' \
 	'-DOPENSSL_NO_PINSHARED' \
 	'-DOPENSSL_THREADS' \
 	'-DNAPI_DISABLE_CPP_EXCEPTIONS' \
@@ -23,8 +23,7 @@ CFLAGS_Debug := \
 	-O0 \
 	-gdwarf-2 \
 	-mmacosx-version-min=10.15 \
-	-arch \
-	arm64 \
+	-arch arm64 \
 	-Wall \
 	-Wendif-labels \
 	-W \
@@ -50,14 +49,14 @@ CFLAGS_OBJC_Debug :=
 CFLAGS_OBJCC_Debug :=
 
 INCS_Debug := \
-	-I/Users/akshayaggarwal/Library/Caches/node-gyp/20.19.2/include/node \
-	-I/Users/akshayaggarwal/Library/Caches/node-gyp/20.19.2/src \
-	-I/Users/akshayaggarwal/Library/Caches/node-gyp/20.19.2/deps/openssl/config \
-	-I/Users/akshayaggarwal/Library/Caches/node-gyp/20.19.2/deps/openssl/openssl/include \
-	-I/Users/akshayaggarwal/Library/Caches/node-gyp/20.19.2/deps/uv/include \
-	-I/Users/akshayaggarwal/Library/Caches/node-gyp/20.19.2/deps/zlib \
-	-I/Users/akshayaggarwal/Library/Caches/node-gyp/20.19.2/deps/v8/include \
-	-I/Users/akshayaggarwal/VSCode/jarvis-ai-assistant-test/node_modules/node-addon-api
+	-I/Users/shiva/Library/Caches/node-gyp/20.20.0/include/node \
+	-I/Users/shiva/Library/Caches/node-gyp/20.20.0/src \
+	-I/Users/shiva/Library/Caches/node-gyp/20.20.0/deps/openssl/config \
+	-I/Users/shiva/Library/Caches/node-gyp/20.20.0/deps/openssl/openssl/include \
+	-I/Users/shiva/Library/Caches/node-gyp/20.20.0/deps/uv/include \
+	-I/Users/shiva/Library/Caches/node-gyp/20.20.0/deps/zlib \
+	-I/Users/shiva/Library/Caches/node-gyp/20.20.0/deps/v8/include \
+	-I/Users/shiva/Documents/Jarvis/node_modules/node-addon-api
 
 DEFS_Release := \
 	'-DNODE_GYP_MODULE_NAME=typing_monitor' \
@@ -65,9 +64,9 @@ DEFS_Release := \
 	'-DUSING_V8_SHARED=1' \
 	'-DV8_DEPRECATION_WARNINGS=1' \
 	'-D_GLIBCXX_USE_CXX11_ABI=1' \
+	'-D_FILE_OFFSET_BITS=64' \
 	'-D_DARWIN_USE_64_BIT_INODE=1' \
 	'-D_LARGEFILE_SOURCE' \
-	'-D_FILE_OFFSET_BITS=64' \
 	'-DOPENSSL_NO_PINSHARED' \
 	'-DOPENSSL_THREADS' \
 	'-DNAPI_DISABLE_CPP_EXCEPTIONS' \
@@ -78,8 +77,7 @@ CFLAGS_Release := \
 	-O3 \
 	-gdwarf-2 \
 	-mmacosx-version-min=10.15 \
-	-arch \
-	arm64 \
+	-arch arm64 \
 	-Wall \
 	-Wendif-labels \
 	-W \
@@ -105,14 +103,14 @@ CFLAGS_OBJC_Release :=
 CFLAGS_OBJCC_Release :=
 
 INCS_Release := \
-	-I/Users/akshayaggarwal/Library/Caches/node-gyp/20.19.2/include/node \
-	-I/Users/akshayaggarwal/Library/Caches/node-gyp/20.19.2/src \
-	-I/Users/akshayaggarwal/Library/Caches/node-gyp/20.19.2/deps/openssl/config \
-	-I/Users/akshayaggarwal/Library/Caches/node-gyp/20.19.2/deps/openssl/openssl/include \
-	-I/Users/akshayaggarwal/Library/Caches/node-gyp/20.19.2/deps/uv/include \
-	-I/Users/akshayaggarwal/Library/Caches/node-gyp/20.19.2/deps/zlib \
-	-I/Users/akshayaggarwal/Library/Caches/node-gyp/20.19.2/deps/v8/include \
-	-I/Users/akshayaggarwal/VSCode/jarvis-ai-assistant-test/node_modules/node-addon-api
+	-I/Users/shiva/Library/Caches/node-gyp/20.20.0/include/node \
+	-I/Users/shiva/Library/Caches/node-gyp/20.20.0/src \
+	-I/Users/shiva/Library/Caches/node-gyp/20.20.0/deps/openssl/config \
+	-I/Users/shiva/Library/Caches/node-gyp/20.20.0/deps/openssl/openssl/include \
+	-I/Users/shiva/Library/Caches/node-gyp/20.20.0/deps/uv/include \
+	-I/Users/shiva/Library/Caches/node-gyp/20.20.0/deps/zlib \
+	-I/Users/shiva/Library/Caches/node-gyp/20.20.0/deps/v8/include \
+	-I/Users/shiva/Documents/Jarvis/node_modules/node-addon-api
 
 OBJS := \
 	$(obj).target/$(TARGET)/src/native/typing_monitor.o
@@ -147,8 +145,7 @@ LDFLAGS_Debug := \
 	-undefined dynamic_lookup \
 	-Wl,-search_paths_first \
 	-mmacosx-version-min=10.15 \
-	-arch \
-	arm64 \
+	-arch arm64 \
 	-L$(builddir) \
 	-stdlib=libc++
 
@@ -160,8 +157,7 @@ LDFLAGS_Release := \
 	-undefined dynamic_lookup \
 	-Wl,-search_paths_first \
 	-mmacosx-version-min=10.15 \
-	-arch \
-	arm64 \
+	-arch arm64 \
 	-L$(builddir) \
 	-stdlib=libc++
 
