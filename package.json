@@ -9,8 +9,13 @@
     "build": "npm run build:native && npx webpack",
     "server": "tsx src/server/index.ts",
     "build:tsc": "tsc --noEmit",
-    "build:native": "node-gyp rebuild",
+    "build:native": "node build-native.js",
     "build:mac": "npm run build && electron-builder --mac --dir",
+    "build:win": "npm run build && electron-builder --win --x64",
+    "build:win:dir": "npm run build && electron-builder --win --x64 --dir",
+    "build:win:publish": "npm run build && electron-builder --win --x64 --publish always",
+    "build:win:check": "node tools/windows-release-readiness.js",
+    "build:win:release": "npm run build:win:check && npm run build:win:publish",
     "build:dmg": "npm run build && electron-builder --mac --x64 --arm64",
     "build:dmg:custom": "npm run build:mac && chmod +x ./scripts/create-dmg.sh && ./scripts/create-dmg.sh both",
     "build:dmg:x64": "npm run build:mac && chmod +x ./scripts/create-dmg.sh && ./scripts/create-dmg.sh x64",
@@ -20,6 +25,9 @@
     "build:signed:arm64": "chmod +x ./scripts/notarization/build-sign-notarize.sh && ./scripts/notarization/build-sign-notarize.sh arm64",
     "notarize": "chmod +x ./scripts/notarization/quick-notarize.sh && ./scripts/notarization/quick-notarize.sh",
     "dist": "npm run build:dmg",
+    "dist:win": "npm run build:win",
+    "dist:all": "npm run build:dmg && npm run build:win",
+    "release:win:check": "node tools/windows-release-readiness.js",
     "lint": "eslint src --ext .ts,.tsx",
     "type-check": "tsc --noEmit",
     "test": "jest",
@@ -30,7 +38,7 @@
     "test:performance": "jest --testPathPatterns=performance",
     "test:robustness": "node scripts/test-robustness.js",
     "test:launch": "node scripts/launch-readiness.js",
-    "install": "node-gyp rebuild"
+    "install": "node build-native.js"
   },
   "keywords": [
     "electron",
@@ -114,26 +122,6 @@
     ],
     "extraResources": [
       {
-        "from": "dist/jarvis-ai-assistant.node",
-        "to": "jarvis-ai-assistant.node"
-      },
-      {
-        "from": "build/Release/universal_key_monitor.node",
-        "to": "universal_key_monitor.node"
-      },
-      {
-        "from": "build/Release/fn_key_monitor.node",
-        "to": "fn_key_monitor.node"
-      },
-      {
-        "from": "build/Release/audio_capture.node",
-        "to": "audio_capture.node"
-      },
-      {
-        "from": "build/Release/typing_monitor.node",
-        "to": "typing_monitor.node"
-      },
-      {
         "from": "assets/jarvis-logo-dark.png",
         "to": "jarvis-logo-dark.png"
       },
@@ -144,10 +132,6 @@
       {
         "from": "assets/jarvis-logo.png",
         "to": "jarvis-logo.png"
-      },
-      {
-        "from": "assets/ffmpeg",
-        "to": "ffmpeg"
       },
       {
         "from": "assets/jarvis-menubar-template.png",
@@ -179,6 +163,32 @@
       "notarize": {
         "teamId": ""
       },
+      "extraResources": [
+        {
+          "from": "dist/jarvis-ai-assistant.node",
+          "to": "jarvis-ai-assistant.node"
+        },
+        {
+          "from": "build/Release/universal_key_monitor.node",
+          "to": "universal_key_monitor.node"
+        },
+        {
+          "from": "build/Release/fn_key_monitor.node",
+          "to": "fn_key_monitor.node"
+        },
+        {
+          "from": "build/Release/audio_capture.node",
+          "to": "audio_capture.node"
+        },
+        {
+          "from": "build/Release/typing_monitor.node",
+          "to": "typing_monitor.node"
+        },
+        {
+          "from": "assets/ffmpeg",
+          "to": "ffmpeg"
+        }
+      ],
       "target": [
         {
           "target": "dmg",
@@ -199,6 +209,30 @@
         "NSMicrophoneUsageDescription": "Jarvis needs microphone access for voice dictation and AI assistance",
         "NSScreenCaptureDescription": "Jarvis needs screen capture permission for AI assistance features"
       }
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png",
+      "verifyUpdateCodeSignature": false,
+      "artifactName": "${productName}-${version}-${arch}-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
     },
     "dmg": {
       "background": "dmg-assets/background.png",
@@ -237,7 +271,7 @@
     ],
     "publish": {
       "provider": "github",
-      "owner": "",
+      "owner": "akshayaggarwal99",
       "repo": "jarvis-ai-assistant",
       "releaseType": "release"
     }

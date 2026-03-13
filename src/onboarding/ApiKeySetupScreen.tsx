@@ -282,7 +282,7 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
               )}
             </div>
             <h4 className={`text-sm font-medium ${theme.text.primary} mb-1`}>Local Whisper</h4>
-            <p className={`text-xs ${theme.text.tertiary}`}>Runs on your Mac, 100% offline</p>
+            <p className={`text-xs ${theme.text.tertiary}`}>Runs on your device, 100% offline</p>
           </button>
 
           {/* Deepgram Option */}

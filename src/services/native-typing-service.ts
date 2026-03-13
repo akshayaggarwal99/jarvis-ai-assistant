@@ -18,6 +18,11 @@ export class NativeTypingService {
   private loadNativeModule(): boolean {
     if (this.typingMonitor) return true;
 
+    if (process.platform !== 'darwin') {
+      console.warn(`Native typing monitor is macOS-only (platform: ${process.platform})`);
+      return false;
+    }
+
     try {
       // For Electron apps, we need to bypass webpack's require interception
       const nodeRequire = eval('require');
@@ -68,7 +73,7 @@ export class NativeTypingService {
     }
 
     if (!this.loadNativeModule()) {
-      console.error('Native typing monitor module not loaded');
+      console.error(`Native typing monitor module not loaded for platform: ${process.platform}`);
       return false;
     }
 

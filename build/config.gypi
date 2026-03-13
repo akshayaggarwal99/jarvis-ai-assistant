@@ -427,15 +427,15 @@
     "nodedir": "/Users/akshayaggarwal/Library/Caches/node-gyp/20.19.2",
     "python": "/Users/akshayaggarwal/.local/share/mise/installs/python/3.12.12/bin/python3",
     "standalone_static_library": 1,
-    "prefix": "/Users/akshayaggarwal/.nvm/versions/node/v20.19.2",
-    "user_agent": "npm/10.8.2 node/v20.19.2 darwin arm64 workspaces/false",
-    "cache": "/Users/akshayaggarwal/.npm",
-    "node_gyp": "/Users/akshayaggarwal/.nvm/versions/node/v20.19.2/lib/node_modules/npm/node_modules/node-gyp/bin/node-gyp.js",
-    "npm_version": "10.8.2",
+    "global_prefix": "/Users/akshayaggarwal/.nvm/versions/node/v20.19.2",
+    "local_prefix": "/Users/akshayaggarwal/VSCode/jarvis-ai-assistant-test",
+    "globalconfig": "/Users/akshayaggarwal/.nvm/versions/node/v20.19.2/etc/npmrc",
     "userconfig": "/Users/akshayaggarwal/.npmrc",
     "init_module": "/Users/akshayaggarwal/.npm-init.js",
-    "globalconfig": "/Users/akshayaggarwal/.nvm/versions/node/v20.19.2/etc/npmrc",
-    "local_prefix": "/Users/akshayaggarwal/VSCode/jarvis-ai-assistant-test",
-    "global_prefix": "/Users/akshayaggarwal/.nvm/versions/node/v20.19.2"
+    "npm_version": "10.8.2",
+    "node_gyp": "/Users/akshayaggarwal/.nvm/versions/node/v20.19.2/lib/node_modules/npm/node_modules/node-gyp/bin/node-gyp.js",
+    "cache": "/Users/akshayaggarwal/.npm",
+    "user_agent": "npm/10.8.2 node/v20.19.2 darwin arm64 workspaces/false",
+    "prefix": "/Users/akshayaggarwal/.nvm/versions/node/v20.19.2"
   }
 }

@@ -116,7 +116,15 @@ const VoiceTranscriptionScreen: React.FC<VoiceTranscriptionScreenProps> = ({ onN
     // Fetch hotkey setting
     const fetchHotkey = async () => {
       try {
-        if (electronAPI?.appGetSettings) {
+        let isWindows = false;
+        if (electronAPI?.getPlatform) {
+          const platform = await electronAPI.getPlatform();
+          isWindows = platform === 'win32';
+        }
+
+        if (isWindows) {
+          setCurrentHotkey('Ctrl+Shift+Space');
+        } else if (electronAPI?.appGetSettings) {
           const settings = await electronAPI.appGetSettings();
           if (settings?.hotkey) {
             const hotkeyMap: Record<string, string> = {

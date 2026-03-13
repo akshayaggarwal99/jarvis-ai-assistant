@@ -135,25 +135,37 @@ const EmailDictationScreen: React.FC<EmailDictationScreenProps> = ({ onNext }) =
     }
     
     // Get user settings to display correct hotkey and user name
-    if (electronAPI?.getUserSettings) {
-      electronAPI.getUserSettings().then((settings: any) => {
-        if (settings?.hotkey) {
-          const hotkeyMap: Record<string, string> = {
-            'fn': 'Fn',
-            'ctrl': 'Control',
-            'cmd': 'Command',
-            'alt': 'Option',
-            'shift': 'Shift'
-          };
-          
-          if (hotkeyMap[settings.hotkey]) {
-            setCurrentHotkey(hotkeyMap[settings.hotkey] || 'Control');
+    const fetchHotkey = async () => {
+      try {
+        let isWindows = false;
+        if (electronAPI?.getPlatform) {
+          const platform = await electronAPI.getPlatform();
+          isWindows = platform === 'win32';
+        }
+
+        if (isWindows) {
+          setCurrentHotkey('Ctrl+Shift+Space');
+        } else if (electronAPI?.getUserSettings) {
+          const settings = await electronAPI.getUserSettings();
+          if (settings?.hotkey) {
+            const hotkeyMap: Record<string, string> = {
+              'fn': 'Fn',
+              'ctrl': 'Control',
+              'cmd': 'Command',
+              'alt': 'Option',
+              'shift': 'Shift'
+            };
+            
+            if (hotkeyMap[settings.hotkey]) {
+              setCurrentHotkey(hotkeyMap[settings.hotkey] || 'Control');
+            }
           }
         }
-      }).catch(() => {
+      } catch (error) {
         // Silent fail for better performance
-      });
-    }
+      }
+    };
+    fetchHotkey();
     
     // Get user name from app settings first (set during onboarding)
     if (electronAPI?.appGetSettings) {

@@ -60,7 +60,7 @@ export class MenuService {
           { type: 'separator' },
           {
             label: 'Settings',
-            accelerator: 'Cmd+,',
+            accelerator: process.platform === 'darwin' ? 'Cmd+,' : 'Ctrl+,',
             click: () => {
               const dashboardWindow = this.windowManager.getWindow('dashboard');
               if (dashboardWindow) {

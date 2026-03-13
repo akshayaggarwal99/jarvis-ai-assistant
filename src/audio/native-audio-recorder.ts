@@ -18,6 +18,10 @@ export class NativeAudioRecorder {
   private totalOutputBytes = 0;
 
   constructor() {
+    if (process.platform !== 'darwin') {
+      throw new Error(`Native audio recording is only supported on macOS (platform: ${process.platform})`);
+    }
+
     try {
       // Try to load the native module with static imports first
       let nativeModule = null;
@@ -431,6 +435,10 @@ export class NativeAudioRecorder {
    * Check if native audio recording is available
    */
   static isAvailable(): boolean {
+    if (process.platform !== 'darwin') {
+      return false;
+    }
+
     try {
       // Try multiple possible paths for the native module
       const possiblePaths = [

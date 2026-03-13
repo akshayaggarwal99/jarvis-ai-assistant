@@ -281,7 +281,7 @@ const PermissionsScreen: React.FC<PermissionsScreenProps> = ({ onNext, onPermiss
                   <span className="px-2 py-0.5 text-xs font-medium bg-red-500/10 text-red-400 rounded-md border border-red-500/20">Required</span>
                 </div>
                 <p className={`${theme.text.tertiary} text-xs font-normal leading-relaxed`}>
-                  Allows Jarvis to type text and monitor Fn key (core feature)
+                  Allows Jarvis to type text and monitor hotkeys (core feature)
                 </p>
               </div>
             </div>
@@ -323,7 +323,25 @@ const PermissionsScreen: React.FC<PermissionsScreenProps> = ({ onNext, onPermiss
   );
 };
 
-const FeatureTourScreen: React.FC<{ onNext: () => void }> = ({ onNext }) => (
+const FeatureTourScreen: React.FC<{ onNext: () => void }> = ({ onNext }) => {
+  const [isWindows, setIsWindows] = useState(false);
+
+  useEffect(() => {
+    const checkPlatform = async () => {
+      try {
+        const electronAPI = (window as any).electronAPI;
+        if (electronAPI?.getPlatform) {
+          const platform = await electronAPI.getPlatform();
+          setIsWindows(platform === 'win32');
+        }
+      } catch (error) {
+        console.error('Failed to get platform:', error);
+      }
+    };
+    checkPlatform();
+  }, []);
+
+  return (
   <div className="w-full max-w-2xl mx-auto px-6">
     {/* Header */}
     <div className="text-center mb-10">
@@ -343,12 +361,14 @@ const FeatureTourScreen: React.FC<{ onNext: () => void }> = ({ onNext }) => (
       <div className={`${theme.glass.primary} ${theme.radius.lg} p-5 ${theme.shadow} hover:${theme.glass.secondary} transition-all duration-300 border border-white/5`}>
         <div className="flex items-center space-x-4">
           <div className="flex items-center justify-center bg-white/8 px-4 py-2.5 rounded-lg backdrop-blur-xl border border-white/10">
-            <kbd className="bg-white/15 border border-white/20 rounded-md px-2 py-1 text-xs font-mono text-white">fn</kbd>
+            <kbd className="bg-white/15 border border-white/20 rounded-md px-2 py-1 text-xs font-mono text-white">
+              {isWindows ? 'Ctrl+Shift+Space' : 'fn'}
+            </kbd>
           </div>
           <div className="flex-1 min-w-0">
             <h3 className={`text-sm font-medium ${theme.text.primary} mb-1`}>Voice Dictation</h3>
             <p className={`${theme.text.tertiary} text-xs font-normal leading-relaxed`}>
-              Hold Fn key and speak to convert your voice to text instantly
+              {isWindows ? 'Press Ctrl+Shift+Space and speak to convert your voice to text instantly' : 'Hold Fn key and speak to convert your voice to text instantly'}
             </p>
           </div>
         </div>
@@ -383,11 +403,11 @@ const FeatureTourScreen: React.FC<{ onNext: () => void }> = ({ onNext }) => (
         <span className={`${theme.text.primary} text-sm font-medium`}>You're all set!</span>
       </div>
       <p className={`${theme.text.tertiary} text-xs font-normal`}>
-        Try holding the Fn key and speaking to see Jarvis in action
+        {isWindows ? 'Try pressing Ctrl+Shift+Space and speaking to see Jarvis in action' : 'Try holding the Fn key and speaking to see Jarvis in action'}
       </p>
     </div>
   </div>
-);
+)};
 
 const OnboardingFlow: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
   const [currentStep, setCurrentStep] = useState(0);

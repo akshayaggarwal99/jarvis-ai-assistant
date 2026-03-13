@@ -29,6 +29,11 @@ export class UniversalKeyService {
   private loadNativeModule(): boolean {
     if (this.keyMonitor) return true;
 
+    if (process.platform !== 'darwin') {
+      Logger.warning(`Universal key monitor native module is macOS-only (platform: ${process.platform})`);
+      return false;
+    }
+
     try {
       // For Electron apps, we need to bypass webpack's require interception
       const nodeRequire = eval('require');
@@ -86,7 +91,7 @@ export class UniversalKeyService {
     }
 
     if (!this.loadNativeModule()) {
-      Logger.error('Universal key monitor not loaded');
+      Logger.error(`Universal key monitor not loaded for platform: ${process.platform}`);
       return false;
     }
 
@@ -214,6 +219,10 @@ export class UniversalKeyService {
   }
 
   getSupportedKeys(): string[] {
+    if (process.platform !== 'darwin') {
+      return ['control'];
+    }
+
     if (!this.loadNativeModule()) {
       return ['fn']; // fallback to at least function key
     }

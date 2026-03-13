@@ -113,6 +113,7 @@ let userNudgeService: UserNudgeService | null = null;
 let privacyConsentService = PrivacyConsentService.getInstance();
 let isHotkeyMonitoringActive = false;
 let lastActiveHotkey: string | null = null;
+let fallbackHotkeyAccelerator: string | null = null;
 
 // Initialize IPC handlers and register them immediately
 const ipcHandlers = IPCHandlers.getInstance();
@@ -835,6 +836,46 @@ function startHotkeyMonitoring() {
   const powerManager = PowerManagementService.getInstance();
   powerManager.registerService('audio-monitoring', pushToTalkService);
 
+  if (process.platform !== 'darwin') {
+    const fallbackAccelerator = 'CommandOrControl+Shift+Space';
+
+    try {
+      const registered = globalShortcut.register(fallbackAccelerator, () => {
+        if (!pushToTalkService) return;
+
+        void (async () => {
+          try {
+            if (pushToTalkService.active || pushToTalkService.transcribing) {
+              Logger.info('🪟 [Hotkey] Fallback shortcut pressed: stopping dictation');
+              await pushToTalkService.stop();
+            } else {
+              Logger.info('🪟 [Hotkey] Fallback shortcut pressed: starting dictation');
+              await pushToTalkService.start();
+            }
+          } catch (error) {
+            Logger.error('❌ [Hotkey] Non-mac fallback toggle failed:', error);
+          }
+        })();
+      });
+
+      if (!registered) {
+        Logger.error(`❌ [Hotkey] Failed to register non-mac fallback shortcut: ${fallbackAccelerator}`);
+        return;
+      }
+
+      fallbackHotkeyAccelerator = fallbackAccelerator;
+      isHotkeyMonitoringActive = true;
+      lastActiveHotkey = currentHotkey;
+
+      Logger.success(`✅ [Hotkey] Non-mac fallback active: ${fallbackAccelerator}`);
+      Logger.info('🪟 [Hotkey] Press the fallback shortcut once to start dictation and again to stop');
+      return;
+    } catch (error) {
+      Logger.error('❌ [Hotkey] Error registering non-mac fallback shortcut:', error);
+      return;
+    }
+  }
+
   // Use UniversalKeyService for all modifier keys (fn, option, control)
   if (['fn', 'option', 'control'].includes(currentHotkey)) {
     Logger.info(`⚙ [Hotkey] Starting universal key monitoring for: ${currentHotkey}`);
@@ -913,6 +954,17 @@ function stopHotkeyMonitoring() {
     }
   }
 
+  if (fallbackHotkeyAccelerator) {
+    try {
+      globalShortcut.unregister(fallbackHotkeyAccelerator);
+      Logger.info(`⚙ [Lifecycle] Fallback shortcut unregistered: ${fallbackHotkeyAccelerator}`);
+    } catch (error) {
+      Logger.error('⚙ [Lifecycle] Error unregistering fallback shortcut:', error);
+    } finally {
+      fallbackHotkeyAccelerator = null;
+    }
+  }
+
   // Unregister any global shortcuts
   try {
     shortcutService.unregisterAllShortcuts();
@@ -933,6 +985,8 @@ function stopHotkeyMonitoring() {
 
   // Clean up push-to-talk service
   pushToTalkService = null;
+  isHotkeyMonitoringActive = false;
+  lastActiveHotkey = null;
 
   Logger.info('⚙ [Lifecycle] Hotkey monitoring cleanup complete');
 }

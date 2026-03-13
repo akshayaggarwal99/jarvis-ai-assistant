@@ -41,6 +41,10 @@ export class FocusDetector {
    * This uses macOS accessibility APIs to determine the focused element type
    */
   async isInTextInputField(): Promise<boolean> {
+    if (process.platform !== 'darwin') {
+      return false;
+    }
+
     try {
       const script = `
         tell application "System Events"
@@ -98,6 +102,15 @@ export class FocusDetector {
     isTextInput: boolean;
     application: string;
   }> {
+    if (process.platform !== 'darwin') {
+      return {
+        application: 'unsupported-platform',
+        role: 'unsupported',
+        description: `Focus detection is macOS-only (platform: ${process.platform})`,
+        isTextInput: false
+      };
+    }
+
     try {
       const script = `
         tell application "System Events"
@@ -154,6 +167,10 @@ export class FocusDetector {
    * This is less detailed but faster for frequent checks
    */
   async isInTextInputFast(): Promise<boolean> {
+    if (process.platform !== 'darwin') {
+      return false;
+    }
+
     try {
       const script = `
         tell application "System Events"

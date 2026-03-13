@@ -12,6 +12,7 @@ const FnKeyTutorialScreen: React.FC<FnKeyTutorialScreenProps> = ({ onNext }) => 
   const [showHotkeyOptions, setShowHotkeyOptions] = useState(false);
   const [selectedHotkey, setSelectedHotkey] = useState('fn');
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
+  const [isWindows, setIsWindows] = useState(false);
 
   const hotkeyOptions = [
     { label: 'Fn Key', value: 'fn', description: 'Default function key (recommended)' },
@@ -24,6 +25,10 @@ const FnKeyTutorialScreen: React.FC<FnKeyTutorialScreenProps> = ({ onNext }) => 
     const loadCurrentHotkey = async () => {
       try {
         const electronAPI = (window as any).electronAPI;
+        if (electronAPI && electronAPI.getPlatform) {
+          const platform = await electronAPI.getPlatform();
+          setIsWindows(platform === 'win32');
+        }
         if (electronAPI && electronAPI.getCurrentSettings) {
           const settings = await electronAPI.getCurrentSettings();
           console.log('🔧 [Tutorial] Current settings:', settings);
@@ -100,6 +105,7 @@ const FnKeyTutorialScreen: React.FC<FnKeyTutorialScreenProps> = ({ onNext }) => 
   };
 
   const getCurrentHotkeyLabel = () => {
+    if (isWindows) return 'Ctrl+Shift+Space';
     const option = hotkeyOptions.find(opt => opt.value === selectedHotkey);
     return option ? option.label : 'Fn Key';
   };
@@ -173,7 +179,11 @@ const FnKeyTutorialScreen: React.FC<FnKeyTutorialScreenProps> = ({ onNext }) => 
     const handleKeyDown = (e: KeyboardEvent) => {
       let keyMatches = false;
       
-      if (selectedHotkey === 'fn' && (e.key === 'Fn' || e.code === 'Fn' || e.keyCode === 63236)) {
+      if (isWindows) {
+        if (e.ctrlKey && e.shiftKey && e.code === 'Space') {
+          keyMatches = true;
+        }
+      } else if (selectedHotkey === 'fn' && (e.key === 'Fn' || e.code === 'Fn' || e.keyCode === 63236)) {
         keyMatches = true;
       } else if (selectedHotkey === 'ctrl' && (e.ctrlKey || e.key === 'Control')) {
         keyMatches = true;
@@ -194,7 +204,11 @@ const FnKeyTutorialScreen: React.FC<FnKeyTutorialScreenProps> = ({ onNext }) => 
     const handleKeyUp = (e: KeyboardEvent) => {
       let keyMatches = false;
       
-      if (selectedHotkey === 'fn' && (e.key === 'Fn' || e.code === 'Fn' || e.keyCode === 63236)) {
+      if (isWindows) {
+        if (e.code === 'Space' || e.key === 'Control' || e.key === 'Shift') {
+          keyMatches = true;
+        }
+      } else if (selectedHotkey === 'fn' && (e.key === 'Fn' || e.code === 'Fn' || e.keyCode === 63236)) {
         keyMatches = true;
       } else if (selectedHotkey === 'ctrl' && (e.key === 'Control')) {
         keyMatches = true;
@@ -256,20 +270,20 @@ const FnKeyTutorialScreen: React.FC<FnKeyTutorialScreenProps> = ({ onNext }) => 
       <div className="text-center mb-8">
         <div className="inline-block">
           <div className={`
-            relative inline-flex items-center justify-center w-20 h-20 rounded-xl font-mono text-lg font-medium
+            relative inline-flex items-center justify-center px-6 h-20 rounded-xl font-mono text-lg font-medium
             transition-all duration-300 border border-white/20
             ${fnKeyPressed 
               ? 'bg-blue-500/90 border-blue-400/50 text-white shadow-lg shadow-blue-500/20 scale-105' 
               : 'bg-white/8 border-white/20 text-white/90 backdrop-blur-xl hover:bg-white/12'
             }
           `}>
-            <span className="tracking-wide">{selectedHotkey === 'fn' ? 'Fn' : selectedHotkey === 'ctrl' ? 'Ctrl' : 'Option'}</span>
+            <span className="tracking-wide">{isWindows ? 'Ctrl+Shift+Space' : (selectedHotkey === 'fn' ? 'Fn' : selectedHotkey === 'ctrl' ? 'Ctrl' : 'Option')}</span>
             {fnKeyPressed && (
               <div className="absolute inset-0 rounded-xl bg-blue-400/20 animate-pulse"></div>
             )}
           </div>
           <p className={`${theme.text.tertiary} text-xs mt-3 font-normal`}>
-            {fnKeyPressed ? `${getCurrentHotkeyLabel()} Key` : `Hold ${getCurrentHotkeyLabel()} to start voice input`}
+            {fnKeyPressed ? `${getCurrentHotkeyLabel()} Key` : (isWindows ? `Press ${getCurrentHotkeyLabel()} to start voice input` : `Hold ${getCurrentHotkeyLabel()} to start voice input`)}
           </p>
         </div>
       </div>
@@ -297,12 +311,14 @@ const FnKeyTutorialScreen: React.FC<FnKeyTutorialScreenProps> = ({ onNext }) => 
           <p className={`${theme.text.quaternary} text-xs font-normal`}>
             Hold {getCurrentHotkeyLabel()} key to start voice input
           </p>
-          <button
-            onClick={() => setShowHotkeyOptions(true)}
-            className="text-blue-400 hover:text-blue-300 underline transition-colors text-xs font-normal"
-          >
-            Not working? Try different key
-          </button>
+          {!isWindows && (
+            <button
+              onClick={() => setShowHotkeyOptions(true)}
+              className="text-blue-400 hover:text-blue-300 underline transition-colors text-xs font-normal"
+            >
+              Not working? Try different key
+            </button>
+          )}
         </div>
       )}
 

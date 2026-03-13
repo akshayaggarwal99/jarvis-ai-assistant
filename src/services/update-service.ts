@@ -1,5 +1,5 @@
 import { Logger } from '../core/logger';
-import { BrowserWindow, app } from 'electron';
+import { BrowserWindow, app, shell } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as https from 'https';
@@ -126,18 +126,19 @@ export class UpdateService {
     
     try {
       const tempDir = path.join(require('os').tmpdir(), 'jarvis-update');
-      const dmgPath = path.join(tempDir, `jarvis-${version}.dmg`);
+      const fileExtension = process.platform === 'darwin' ? 'dmg' : process.platform === 'win32' ? 'exe' : 'bin';
+      const packagePath = path.join(tempDir, `jarvis-${version}.${fileExtension}`);
       
       // Create temp directory
       if (!fs.existsSync(tempDir)) {
         fs.mkdirSync(tempDir, { recursive: true });
       }
       
-      // Download the DMG file
-      await this.downloadFile(downloadUrl, dmgPath);
+      // Download the installer package
+      await this.downloadFile(downloadUrl, packagePath);
       
       // Install the update
-      await this.installUpdate(dmgPath, version);
+      await this.installUpdate(packagePath, version);
       
     } catch (error) {
       Logger.error('❌ Download/install error:', error);
@@ -191,7 +192,31 @@ export class UpdateService {
     });
   }
 
-  private async installUpdate(dmgPath: string, version: string): Promise<void> {
+  private async installUpdate(packagePath: string, version: string): Promise<void> {
+    if (process.platform === 'darwin') {
+      await this.installMacUpdate(packagePath);
+      return;
+    }
+
+    if (process.platform === 'win32') {
+      Logger.info('🪟 Starting Windows update installer...');
+      const openError = await shell.openPath(packagePath);
+      if (openError) {
+        throw new Error(`Failed to launch Windows installer: ${openError}`);
+      }
+
+      if (this.mainWindow) {
+        this.mainWindow.webContents.send('update-downloaded');
+      }
+
+      Logger.info('✅ Windows installer launched; restart will complete after installer finishes');
+      return;
+    }
+
+    throw new Error(`Automatic update install is not implemented for platform: ${process.platform}`);
+  }
+
+  private async installMacUpdate(dmgPath: string): Promise<void> {
     Logger.info('🔧 Installing update...');
     
     try {
@@ -259,7 +284,9 @@ export class UpdateService {
       } else {
         // Development mode - we can't actually update, so simulate
         Logger.info('⚠️ Running in development mode - simulating update');
-        this.mainWindow.webContents.send('update-downloaded');
+        if (this.mainWindow) {
+          this.mainWindow.webContents.send('update-downloaded');
+        }
         return;
       }
       

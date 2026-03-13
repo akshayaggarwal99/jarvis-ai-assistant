@@ -1,0 +1,36 @@
+name: Windows Release Readiness
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+      - master
+
+jobs:
+  windows-readiness:
+    runs-on: windows-latest
+    env:
+      ALLOW_UNSIGNED_WINDOWS_RELEASE: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Windows release baseline checks
+        run: npm run release:win:check
+
+      - name: Build Windows unpacked app
+        run: npm run build:win:dir

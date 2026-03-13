@@ -1,13 +1,80 @@
 import { Logger } from '../core/logger';
 import * as fs from 'fs';
 import * as path from 'path';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 
 export class FastAudioRecorder {
   private recordingProcess: any = null;
   private isRecording = false;
   private audioChunks: Buffer[] = [];
   private recordingStartTime = 0;
+
+  private getCaptureArgs(): string[] {
+    if (process.platform === 'darwin') {
+      return [
+        '-f', 'avfoundation',
+        '-i', ':0',
+        '-ar', '16000',
+        '-ac', '1',
+        '-f', 'wav',
+        '-loglevel', 'info',
+        'pipe:1'
+      ];
+    }
+
+    if (process.platform === 'win32') {
+      return [
+        '-f', 'dshow',
+        '-i', 'audio=default',
+        '-ar', '16000',
+        '-ac', '1',
+        '-f', 'wav',
+        '-loglevel', 'info',
+        'pipe:1'
+      ];
+    }
+
+    return [
+      '-f', 'pulse',
+      '-i', 'default',
+      '-ar', '16000',
+      '-ac', '1',
+      '-f', 'wav',
+      '-loglevel', 'info',
+      'pipe:1'
+    ];
+  }
+
+  private resolveFfmpegBinary(): string {
+    const bundledBinary = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+    const candidates = [
+      path.join(process.resourcesPath || __dirname, bundledBinary),
+      process.platform === 'darwin' ? '/opt/homebrew/bin/ffmpeg' : null,
+      process.platform === 'darwin' ? '/usr/local/bin/ffmpeg' : null,
+      process.platform === 'darwin' ? '/usr/bin/ffmpeg' : null,
+      'ffmpeg'
+    ].filter(Boolean) as string[];
+
+    for (const candidate of candidates) {
+      const isAbsolute = path.isAbsolute(candidate);
+      if (isAbsolute && !fs.existsSync(candidate)) {
+        continue;
+      }
+
+      const probe = spawnSync(candidate, ['-version'], {
+        encoding: 'utf8',
+        timeout: 5000,
+        shell: !isAbsolute
+      });
+
+      if (probe.status === 0) {
+        Logger.debug(`✅ [FastAudio] ffmpeg probe succeeded: ${candidate}`);
+        return candidate;
+      }
+    }
+
+    throw new Error(`No working ffmpeg binary found for platform ${process.platform}`);
+  }
 
   async start(onAudioLevel?: (level: number) => void): Promise<void> {
     if (this.isRecording) return;
@@ -32,38 +99,10 @@ export class FastAudioRecorder {
   private async startRecording(onAudioLevel?: (level: number) => void): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
-        // Try using the bundled ffmpeg first, then system ffmpeg
-        const ffmpegPaths = [
-          path.join(process.resourcesPath || __dirname, 'ffmpeg'),
-          '/usr/local/bin/ffmpeg',
-          'ffmpeg'
-        ];
-
-        let ffmpegPath = 'ffmpeg';
-        for (const testPath of ffmpegPaths) {
-          try {
-            if (fs.existsSync(testPath)) {
-              ffmpegPath = testPath;
-              Logger.debug(`Found ffmpeg at: ${ffmpegPath}`);
-              break;
-            }
-          } catch (e) {
-            // Continue checking other paths
-          }
-        }
-
+        const ffmpegPath = this.resolveFfmpegBinary();
         Logger.debug(`Using ffmpeg at: ${ffmpegPath}`);
 
-        // Stream directly to memory - much faster!
-        const args = [
-          '-f', 'avfoundation',
-          '-i', ':0',  // Default audio input - TODO: autodetect via 'ffmpeg -list_devices true -f avfoundation -i ""'
-          '-ar', '16000',
-          '-ac', '1',
-          '-f', 'wav',
-          '-loglevel', 'info', // Increased log level temporarily to debug issues
-          'pipe:1'
-        ];
+        const args = this.getCaptureArgs();
 
         Logger.debug(`🎤 [FastAudio] Spawning FFmpeg with args: ${args.join(' ')}`);
         this.recordingProcess = spawn(ffmpegPath, args);

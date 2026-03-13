@@ -32,7 +32,7 @@ const TutorialPreview: React.FC = () => {
                     : 'text-white/60 hover:text-white hover:bg-white/10'
                 }`}
               >
-                Fn Key Tutorial
+                Hotkey Tutorial
               </button>
               <button
                 onClick={() => setCurrentScreen('voice')}
@@ -75,10 +75,10 @@ const TutorialPreview: React.FC = () => {
         <div className="px-8 py-4">
           <div className="text-center">
             <p className="text-white/60 text-sm">
-              Preview mode: Test the new tutorial screens by pressing the Fn key
+              Preview mode: Test the new tutorial screens by pressing the hotkey
             </p>
             <p className="text-white/40 text-xs mt-1">
-              Make sure Fn key monitoring is enabled in the main process
+              Make sure hotkey monitoring is enabled in the main process
             </p>
           </div>
         </div>

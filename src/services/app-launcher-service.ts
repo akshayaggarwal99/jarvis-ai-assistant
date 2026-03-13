@@ -81,6 +81,11 @@ export class AppLauncherService {
    * Scan for installed applications on macOS
    */
   private async scanInstalledApps(): Promise<void> {
+    if (process.platform !== 'darwin') {
+      Logger.info(`📱 App scanning is currently macOS-only (platform: ${process.platform})`);
+      return;
+    }
+
     try {
       // Get applications from /Applications folder
       const { stdout } = await execAsync('find /Applications -name "*.app" -maxdepth 2');
@@ -112,6 +117,10 @@ export class AppLauncherService {
    * Get bundle ID for an app
    */
   private async getBundleId(appPath: string): Promise<string> {
+    if (process.platform !== 'darwin') {
+      return '';
+    }
+
     try {
       const { stdout } = await execAsync(`defaults read "${appPath}/Contents/Info.plist" CFBundleIdentifier`);
       return stdout.trim();
@@ -510,6 +519,10 @@ export class AppLauncherService {
    */
   private async openApp(appName: string): Promise<boolean> {
     Logger.info(`🚀 [AppLauncher] Attempting to open app: ${appName}`);
+
+    if (process.platform !== 'darwin') {
+      return this.openAppNonMac(appName);
+    }
     
     try {
       // First try opening by the mapped app name directly
@@ -575,6 +588,23 @@ export class AppLauncherService {
       }
       
       Logger.error(`❌ [AppLauncher] App not found: ${appName}`, error);
+      return false;
+    }
+  }
+
+  private async openAppNonMac(appName: string): Promise<boolean> {
+    try {
+      if (process.platform === 'win32') {
+        await execAsync(`powershell -NoProfile -Command "Start-Process -FilePath '${appName.replace(/'/g, "''")}'"`);
+        Logger.success(`✅ [AppLauncher] Launch requested for ${appName} on Windows`);
+        return true;
+      }
+
+      await execAsync(`xdg-open "${appName.replace(/"/g, '\\"')}"`);
+      Logger.success(`✅ [AppLauncher] Launch requested for ${appName} on Linux`);
+      return true;
+    } catch (error) {
+      Logger.error(`❌ [AppLauncher] Failed to launch app on ${process.platform}: ${appName}`, error);
       return false;
     }
   }

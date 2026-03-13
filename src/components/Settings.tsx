@@ -131,9 +131,9 @@ const Settings: React.FC = () => {
   // Pre-defined hotkey options (single keys for push-to-talk)
   const presetHotkeys = [
     { key: 'fn', label: 'Function (fn)', description: 'Push-to-talk - behavior varies by keyboard/settings' },
-    { key: 'option', label: 'Option (⌥)', description: 'Push-to-talk - left or right side' },
-    { key: 'control', label: 'Control (⌃)', description: 'Push-to-talk - bottom left corner' },
-    { key: 'command', label: 'Command (⌘)', description: 'Push-to-talk - left or right Command key' },
+    { key: 'option', label: 'Option (⌥) / Alt', description: 'Push-to-talk - left or right side' },
+    { key: 'control', label: 'Control (⌃) / Ctrl', description: 'Push-to-talk - bottom left corner' },
+    { key: 'command', label: 'Command (⌘) / Win', description: 'Push-to-talk - left or right Command key' },
     { key: 'shift', label: 'Shift (⇧)', description: 'Push-to-talk - left or right Shift key' },
   ];
 
@@ -1841,7 +1841,7 @@ const Settings: React.FC = () => {
           {/* Launch on Startup */}
           <div className="flex items-center justify-between">
             <div>
-              <h4 className={`font-medium ${theme.text.primary} mb-1`}>Launch on Mac Startup</h4>
+              <h4 className={`font-medium ${theme.text.primary} mb-1`}>Launch on Startup</h4>
               <p className={`text-sm ${theme.text.tertiary}`}>Automatically start Jarvis when you log in</p>
             </div>
             <Toggle enabled={showOnStartup} onToggle={handleShowOnStartupToggle} disabled={isSaving} />
@@ -1880,7 +1880,7 @@ const Settings: React.FC = () => {
               <h4 className={`text-lg font-semibold ${theme.text.primary}`}>Jarvis AI Assistant</h4>
               <p className={`text-sm ${theme.text.tertiary}`}>Version {appVersion}</p>
               <p className={`text-xs ${theme.text.tertiary} mt-1`}>
-                Your intelligent voice companion for macOS
+                Your intelligent voice companion
               </p>
             </div>
           </div>
