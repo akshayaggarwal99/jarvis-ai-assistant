@@ -120,7 +120,9 @@ export class UniversalKeyService {
       // Start monitoring with callback and debouncing
       const success = this.keyMonitor!.startMonitoring(keyName, (event: string) => {
         const now = Date.now();
-        const keyUpper = keyName.toUpperCase();
+        
+        // Generate expected event prefix from key name
+        const keyUpper = keyName.replace(/\+/g, '+').toUpperCase();
 
         console.log(`🎹 [NativeEvent] Received: ${event} for ${keyName}`);
 
@@ -221,7 +223,7 @@ export class UniversalKeyService {
       return this.keyMonitor!.getSupportedKeys();
     } catch (error) {
       Logger.error('Failed to get supported keys:', error);
-      return ['fn', 'option', 'control']; // default list without command key
+      return ['fn', 'option', 'control', 'command', 'shift']; // default list including all modifiers
     }
   }
 

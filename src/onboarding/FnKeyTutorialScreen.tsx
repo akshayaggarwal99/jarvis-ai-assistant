@@ -14,9 +14,13 @@ const FnKeyTutorialScreen: React.FC<FnKeyTutorialScreenProps> = ({ onNext }) => 
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
 
   const hotkeyOptions = [
-    { label: 'Fn Key', value: 'fn', description: 'Default function key (recommended)' },
-    { label: 'Ctrl Key', value: 'ctrl', description: 'Control key (alternative)' },
-    { label: 'Option Key', value: 'option', description: 'Option key (alternative)' },
+    { label: 'Fn Key', value: 'fn', description: 'Default function key (may not work on external keyboards)' },
+    { label: 'Cmd + Ctrl', value: 'cmd+ctrl', description: '🎯 Best for external keyboards - works everywhere!' },
+    { label: 'Cmd + Option', value: 'cmd+option', description: '🎯 Perfect for external keyboards - reliable choice' },
+    { label: 'Cmd + D', value: 'cmd+d', description: '⭐ Letter key combo - familiar keyboard shortcut style' },
+    { label: 'Ctrl + Space', value: 'ctrl+space', description: '⭐ Space combo - easy one-hand activation' },
+    { label: 'Ctrl Key', value: 'ctrl', description: 'Control key (single key alternative)' },
+    { label: 'Option Key', value: 'option', description: 'Option key (single key alternative)' },
   ];
 
   // Load current hotkey setting on component mount
@@ -32,7 +36,13 @@ const FnKeyTutorialScreen: React.FC<FnKeyTutorialScreenProps> = ({ onNext }) => 
           const frontendHotkeyMap: { [key: string]: string } = {
             'fn': 'fn',
             'control': 'ctrl',  // Map control to ctrl for frontend
-            'option': 'option'
+            'option': 'option',
+            'cmd+ctrl': 'cmd+ctrl',
+            'cmd+option': 'cmd+option',
+            'ctrl+option': 'ctrl+option',
+            'cmd+shift': 'cmd+shift',
+            'ctrl+shift': 'ctrl+shift',
+            'option+shift': 'option+shift'
           };
           
           const frontendHotkeyValue = frontendHotkeyMap[settings.hotkey] || 'fn';

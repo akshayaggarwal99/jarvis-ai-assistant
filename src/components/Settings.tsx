@@ -128,13 +128,27 @@ const Settings: React.FC = () => {
   // App version
   const [appVersion, setAppVersion] = useState('1.1.3');
 
-  // Pre-defined hotkey options (single keys for push-to-talk)
+  // Pre-defined hotkey options (single keys and multi-key combinations for push-to-talk)
   const presetHotkeys = [
     { key: 'fn', label: 'Function (fn)', description: 'Push-to-talk - behavior varies by keyboard/settings' },
     { key: 'option', label: 'Option (⌥)', description: 'Push-to-talk - left or right side' },
     { key: 'control', label: 'Control (⌃)', description: 'Push-to-talk - bottom left corner' },
     { key: 'command', label: 'Command (⌘)', description: 'Push-to-talk - left or right Command key' },
     { key: 'shift', label: 'Shift (⇧)', description: 'Push-to-talk - left or right Shift key' },
+    
+    // Multi-key combinations (perfect for external keyboards!)
+    { key: 'cmd+ctrl', label: 'Command + Control', description: '🎯 Recommended for external keyboards - reliable on all hardware' },
+    { key: 'cmd+option', label: 'Command + Option', description: '🎯 Perfect for external keyboards - works everywhere' },
+    { key: 'ctrl+option', label: 'Control + Option', description: '🎯 Great for external keyboards - reliable combination' },
+    { key: 'cmd+shift', label: 'Command + Shift', description: 'Multi-key combination - works on all keyboards' },
+    { key: 'ctrl+shift', label: 'Control + Shift', description: 'Multi-key combination - reliable option' },
+    { key: 'option+shift', label: 'Option + Shift', description: 'Multi-key combination - alternative choice' },
+    
+    // Letter key combinations (familiar keyboard shortcuts!)
+    { key: 'cmd+d', label: 'Command + D', description: '⭐ Letter key combo - like familiar app shortcuts' },
+    { key: 'cmd+k', label: 'Command + K', description: '⭐ Letter key combo - customizable hotkey' },
+    { key: 'ctrl+space', label: 'Control + Space', description: '⭐ Space combo - easy to press with one hand' },
+    { key: 'cmd+space', label: 'Command + Space', description: '⭐ Space combo - spotlight-style activation' },
   ];
 
   const languages = [
@@ -1989,7 +2003,7 @@ const Settings: React.FC = () => {
               Select a key to use for push-to-talk dictation. Hold the key down to start recording, release to stop.
             </p>
 
-            <div className="space-y-3">
+            <div className="space-y-3 overflow-y-auto max-h-[60vh] pr-2">
               {presetHotkeys.map((preset) => (
                 <label key={preset.key} className={`flex items-center space-x-3 p-3 ${theme.radius.xl} ${theme.glass.secondary} transition-all duration-200 cursor-pointer border ${hotkey === preset.key
                   ? `${theme.glass.active} border-white/30 ${theme.shadow.lg}`

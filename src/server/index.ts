@@ -116,19 +116,19 @@ const buildServer = (): FastifyInstance => {
 export const start = async () => {
   const server = buildServer();
   try {
-    await server.listen({ port, host: '0.0.0.0' });
+    await server.listen({ port, host: '127.0.0.1' });
     Logger.success(`🔌 Local server running on http://localhost:${port}`);
-    
+
     // Handle graceful shutdown
     const shutdown = async (signal: string) => {
       Logger.info(`Received ${signal}, shutting down gracefully...`);
       await server.close();
       process.exit(0);
     };
-    
+
     process.on('SIGINT', () => shutdown('SIGINT'));
     process.on('SIGTERM', () => shutdown('SIGTERM'));
-    
+
     // Keep process alive (server handles its own event loop)
     return server;
   } catch (error) {

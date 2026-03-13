@@ -122,7 +122,15 @@ const VoiceTranscriptionScreen: React.FC<VoiceTranscriptionScreenProps> = ({ onN
             const hotkeyMap: Record<string, string> = {
               'fn': 'Fn',
               'control': 'Control', 
-              'option': 'Option'
+              'option': 'Option',
+              'command': 'Command',
+              'shift': 'Shift',
+              'cmd+ctrl': 'Cmd + Ctrl',
+              'cmd+option': 'Cmd + Option',
+              'ctrl+option': 'Ctrl + Option',
+              'cmd+shift': 'Cmd + Shift',
+              'ctrl+shift': 'Ctrl + Shift',
+              'option+shift': 'Option + Shift'
             };
             setCurrentHotkey(hotkeyMap[settings.hotkey] || 'Control');
           }
