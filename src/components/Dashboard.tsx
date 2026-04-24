@@ -186,56 +186,57 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
       return;
     }
 
-    console.log('🔧 Setting up IPC listeners...');
+    console.log('🔧 Setting up update event listeners...');
 
-    // Listen for update events
-    const handleUpdateAvailable = (event: any, data: { version: string; releaseNotes: string; isMajor?: boolean; downloadUrl?: string }) => {
-      setUpdateNotification({
-        visible: true,
-        version: data.version,
-        releaseNotes: data.releaseNotes,
-        isMajor: data.isMajor || false,
-        downloadUrl: data.downloadUrl || ''
+    const cleanups: (() => void)[] = [];
+
+    // Listen for update events using the typed preload API
+    if (electronAPI.onUpdateAvailable) {
+      const cleanup = electronAPI.onUpdateAvailable((data: { version: string; releaseNotes: string; isMajor?: boolean; downloadUrl?: string; releaseName?: string }) => {
+        console.log('🆕 Update available:', data.version);
+        setUpdateNotification({
+          visible: true,
+          version: data.version,
+          releaseNotes: data.releaseNotes,
+          isMajor: data.isMajor || false,
+          downloadUrl: data.downloadUrl || ''
+        });
       });
-    };
-
-    const handleUpdateProgress = (event: any, progress: { percent: number }) => {
-      setUpdateProgress({
-        visible: true,
-        progress: progress.percent
-      });
-    };
-
-    const handleUpdateDownloaded = () => {
-      setUpdateProgress({ visible: false, progress: 0 });
-      setUpdateReady(true);
-    };
-
-    const handleUpdateError = (event: any, error: { error: string }) => {
-      setUpdateProgress({ visible: false, progress: 0 });
-      setUpdateNotification({ visible: false, version: '', releaseNotes: '', isMajor: false, downloadUrl: '' });
-      // Could show error notification here if needed
-      console.error('Update error:', error.error);
-    };
-
-    // Add IPC listeners
-    if (electronAPI.ipcRenderer) {
-      console.log('🔧 Adding update listeners...');
-      electronAPI.ipcRenderer.on('update-available', handleUpdateAvailable);
-      electronAPI.ipcRenderer.on('update-progress', handleUpdateProgress);
-      electronAPI.ipcRenderer.on('update-downloaded', handleUpdateDownloaded);
-      electronAPI.ipcRenderer.on('update-download-error', handleUpdateError);
+      if (cleanup) cleanups.push(cleanup);
     }
 
-    // Cleanup listeners
+    if (electronAPI.onUpdateProgress) {
+      const cleanup = electronAPI.onUpdateProgress((data: { percent: number; downloadedMB: number; totalMB: number }) => {
+        setUpdateProgress({
+          visible: true,
+          progress: data.percent
+        });
+      });
+      if (cleanup) cleanups.push(cleanup);
+    }
+
+    if (electronAPI.onUpdateDownloaded) {
+      const cleanup = electronAPI.onUpdateDownloaded(() => {
+        console.log('✅ Update downloaded and installed');
+        setUpdateProgress({ visible: false, progress: 0 });
+        setUpdateReady(true);
+      });
+      if (cleanup) cleanups.push(cleanup);
+    }
+
+    if (electronAPI.onUpdateError) {
+      const cleanup = electronAPI.onUpdateError((data: { error: string }) => {
+        console.error('❌ Update error:', data.error);
+        setUpdateProgress({ visible: false, progress: 0 });
+        setUpdateNotification({ visible: false, version: '', releaseNotes: '', isMajor: false, downloadUrl: '' });
+      });
+      if (cleanup) cleanups.push(cleanup);
+    }
+
+    // Cleanup all listeners on unmount
     return () => {
-      if (electronAPI.ipcRenderer) {
-        console.log('🧹 Cleaning up IPC listeners...');
-        electronAPI.ipcRenderer.removeListener('update-available', handleUpdateAvailable);
-        electronAPI.ipcRenderer.removeListener('update-progress', handleUpdateProgress);
-        electronAPI.ipcRenderer.removeListener('update-downloaded', handleUpdateDownloaded);
-        electronAPI.ipcRenderer.removeListener('update-download-error', handleUpdateError);
-      }
+      console.log('🧹 Cleaning up update listeners...');
+      cleanups.forEach(cleanup => cleanup());
     };
   }, []);
 

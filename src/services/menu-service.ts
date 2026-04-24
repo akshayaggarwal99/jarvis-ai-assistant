@@ -1,4 +1,4 @@
-import { Menu, app, shell, BrowserWindow, Tray, nativeImage, nativeTheme } from 'electron';
+import { Menu, app, shell, BrowserWindow, Tray, nativeImage, nativeTheme, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { Logger } from '../core/logger';
@@ -51,8 +51,34 @@ export class MenuService {
                   Logger.info('🔄 [Menu] Checking for updates...');
                   const result = await this.updateService.forceCheckForUpdates();
                   Logger.info('✅ [Menu] Update check completed:', result);
+                  
+                  // Show dialog feedback if no update is available
+                  if (result && !result.updateAvailable && !result.error) {
+                    dialog.showMessageBox({
+                      type: 'info',
+                      title: 'No Updates Available',
+                      message: 'You\'re up to date!',
+                      detail: `Jarvis ${result.currentVersion} is the latest version.`,
+                      buttons: ['OK']
+                    });
+                  } else if (result?.error) {
+                    dialog.showMessageBox({
+                      type: 'warning',
+                      title: 'Update Check Failed',
+                      message: 'Could not check for updates',
+                      detail: `Please try again later. Error: ${result.error}`,
+                      buttons: ['OK']
+                    });
+                  }
                 } catch (error) {
                   Logger.error('❌ [Menu] Update check failed:', error);
+                  dialog.showMessageBox({
+                    type: 'error',
+                    title: 'Update Check Failed',
+                    message: 'Could not check for updates',
+                    detail: 'Please check your internet connection and try again.',
+                    buttons: ['OK']
+                  });
                 }
               }
             }
@@ -233,8 +259,34 @@ export class MenuService {
               Logger.info('🔄 [Tray Menu] Checking for updates...');
               const result = await this.updateService.forceCheckForUpdates();
               Logger.info('✅ [Tray Menu] Update check completed:', result);
+              
+              // Show dialog feedback if no update is available
+              if (result && !result.updateAvailable && !result.error) {
+                dialog.showMessageBox({
+                  type: 'info',
+                  title: 'No Updates Available',
+                  message: 'You\'re up to date!',
+                  detail: `Jarvis ${result.currentVersion} is the latest version.`,
+                  buttons: ['OK']
+                });
+              } else if (result?.error) {
+                dialog.showMessageBox({
+                  type: 'warning',
+                  title: 'Update Check Failed',
+                  message: 'Could not check for updates',
+                  detail: `Please try again later. Error: ${result.error}`,
+                  buttons: ['OK']
+                });
+              }
             } catch (error) {
               Logger.error('❌ [Tray Menu] Update check failed:', error);
+              dialog.showMessageBox({
+                type: 'error',
+                title: 'Update Check Failed',
+                message: 'Could not check for updates',
+                detail: 'Please check your internet connection and try again.',
+                buttons: ['OK']
+              });
             }
           }
         }

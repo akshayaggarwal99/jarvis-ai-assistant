@@ -35,6 +35,27 @@ interface ElectronAPI {
     on: (channel: string, callback: (...args: any[]) => void) => void;
     removeListener: (channel: string, callback: (...args: any[]) => void) => void;
   };
+
+  // Update methods
+  checkForUpdates: () => Promise<void>;
+  downloadUpdate: (data: { downloadUrl: string; version: string }) => Promise<void>;
+  restartApp: () => Promise<void>;
+
+  // Update event listeners (return cleanup functions)
+  onUpdateAvailable: (callback: (data: {
+    version: string;
+    releaseNotes: string;
+    isMajor: boolean;
+    downloadUrl: string;
+    releaseName?: string;
+  }) => void) => () => void;
+  onUpdateProgress: (callback: (data: {
+    percent: number;
+    downloadedMB: number;
+    totalMB: number;
+  }) => void) => () => void;
+  onUpdateDownloaded: (callback: () => void) => () => void;
+  onUpdateError: (callback: (data: { error: string }) => void) => () => void;
 }
 
 declare global {

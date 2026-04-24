@@ -231,6 +231,31 @@ const Settings: React.FC = () => {
     loadSettings();
   }, []);
 
+  // Listen for settings updates from the main process
+  useEffect(() => {
+    const electronAPI = (window as any).electronAPI;
+    if (electronAPI?.ipcRenderer) {
+      const listener = (_event: any, updatedSettings: any) => {
+        console.log('🔄 [Settings] Received settings update via IPC:', updatedSettings);
+        if (updatedSettings.hotkey) setHotkey(updatedSettings.hotkey);
+        if (updatedSettings.audioFeedback !== undefined) setAudioFeedback(updatedSettings.audioFeedback);
+        if (updatedSettings.showOnStartup !== undefined) setShowOnStartup(updatedSettings.showOnStartup);
+        if (updatedSettings.aiPostProcessing !== undefined) setAiPostProcessing(updatedSettings.aiPostProcessing);
+        if (updatedSettings.useLocalModel !== undefined) setUseLocalModel(updatedSettings.useLocalModel);
+        if (updatedSettings.localModelId !== undefined) setLocalModelId(updatedSettings.localModelId);
+        if (updatedSettings.userName !== undefined) setUserName(updatedSettings.userName);
+        if (updatedSettings.showWaveform !== undefined) setShowWaveform(updatedSettings.showWaveform);
+        if (updatedSettings.preferredMicrophone !== undefined) setPreferredMicrophone(updatedSettings.preferredMicrophone ?? 'default');
+        if (updatedSettings.transcriptionLanguage !== undefined) setTranscriptionLanguage(updatedSettings.transcriptionLanguage);
+      };
+
+      electronAPI.ipcRenderer.on('app-settings:update', listener);
+      return () => {
+        electronAPI.ipcRenderer.removeListener('app-settings:update', listener);
+      };
+    }
+  }, []);
+
   useEffect(() => {
     const fetchVersion = async () => {
       try {
@@ -381,20 +406,16 @@ const Settings: React.FC = () => {
       console.log(`🔧 [Settings] Hotkey change requested: ${hotkey} -> ${newHotkey}`);
       setIsSaving(true);
 
-      // Update UI immediately for responsiveness
-      setHotkey(newHotkey);
-
       // Send to main process to update settings and restart monitoring
       const electronAPI = (window as any).electronAPI;
       if (electronAPI && electronAPI.appUpdateSettings) {
         await electronAPI.appUpdateSettings({ hotkey: newHotkey });
         console.log(`✅ [Settings] Hotkey successfully changed to: ${newHotkey}`);
+        // Note: component state will be updated via the IPC listener ('app-settings:update')
       }
 
     } catch (error) {
       console.error('❌ [Settings] Failed to change hotkey:', error);
-      // Revert UI state on error
-      setHotkey(hotkey);
     } finally {
       setIsSaving(false);
     }

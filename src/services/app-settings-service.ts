@@ -118,11 +118,6 @@ export class AppSettingsService {
 
         const settings = { ...this.getDefaultSettings(), ...parsed };
 
-        // Migrate command key to fn key (command key is no longer supported)
-        if (settings.hotkey === 'command') {
-          settings.hotkey = 'fn';
-        }
-
         return settings;
       }
     } catch (error) {

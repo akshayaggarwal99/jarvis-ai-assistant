@@ -175,8 +175,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // Update methods
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   downloadUpdate: (data: { downloadUrl: string; version: string }) => ipcRenderer.invoke('download-update', data),
   restartApp: () => ipcRenderer.invoke('restart-app'),
+
+  // Update event listeners
+  onUpdateAvailable: (callback: (data: { version: string; releaseNotes: string; isMajor: boolean; downloadUrl: string; releaseName?: string }) => void) => {
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('update-available', listener);
+    return () => { ipcRenderer.removeListener('update-available', listener); };
+  },
+  onUpdateProgress: (callback: (data: { percent: number; downloadedMB: number; totalMB: number }) => void) => {
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('update-progress', listener);
+    return () => { ipcRenderer.removeListener('update-progress', listener); };
+  },
+  onUpdateDownloaded: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('update-downloaded', listener);
+    return () => { ipcRenderer.removeListener('update-downloaded', listener); };
+  },
+  onUpdateError: (callback: (data: { error: string }) => void) => {
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('update-download-error', listener);
+    return () => { ipcRenderer.removeListener('update-download-error', listener); };
+  },
 
   // Expose ipcRenderer for auth callbacks
   ipcRenderer: {

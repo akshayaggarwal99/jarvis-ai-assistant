@@ -121,8 +121,8 @@ export class UniversalKeyService {
       const success = this.keyMonitor!.startMonitoring(keyName, (event: string) => {
         const now = Date.now();
         
-        // Generate expected event prefix from key name
-        const keyUpper = keyName.replace(/\+/g, '+').toUpperCase();
+        // Generate expected event prefix from key name - replace + with _ for multi-key combos
+        const keyUpper = keyName.replace(/\+/g, '_').toUpperCase();
 
         console.log(`🎹 [NativeEvent] Received: ${event} for ${keyName}`);
 
