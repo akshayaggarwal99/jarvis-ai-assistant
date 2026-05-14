@@ -496,7 +496,10 @@ module.exports = [
       new (require('webpack').DefinePlugin)({
         'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
         'process.env.npm_package_version': JSON.stringify(require('./package.json').version),
-        'process.env.SENTRY_DSN': JSON.stringify('') // Disabled in open-source build
+        'process.env.SENTRY_DSN': JSON.stringify(''), // Disabled in open-source build
+        // Empty in open-source builds. Baked in by scripts/notarization/1-build-dmg.sh
+        // when scripts/notarization/.env.posthog is present (gitignored).
+        'process.env.POSTHOG_API_KEY': JSON.stringify(process.env.POSTHOG_API_KEY || '')
       })
     ]
   }

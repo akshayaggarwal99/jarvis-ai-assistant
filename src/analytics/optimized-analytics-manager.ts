@@ -3,6 +3,7 @@ import { LocalAnalyticsStore } from '../storage/local-analytics-store';
 import { TimeSavingsCalculator } from '../services/time-savings-calculator';
 import { Logger } from '../core/logger';
 import { EventEmitter } from 'events';
+import { posthog } from './posthog';
 
 /**
  * Optimized Analytics Manager with real-time updates and efficient queries
@@ -167,6 +168,18 @@ export class OptimizedAnalyticsManager extends EventEmitter {
     Logger.info(`📊 [Analytics] Saving session locally - sessionId: ${session.id}, words: ${wordCount}`);
     this.storage.saveSession(session);
 
+    // Anonymous usage pulse — never includes transcript text. No-op in
+    // open-source builds (no key) or when the user has turned the
+    // `analytics` toggle off in Settings → Privacy.
+    posthog.capture('dictation_completed', {
+      word_count: wordCount,
+      character_count: characterCount,
+      audio_length_ms: audioLengthMs,
+      processing_time_ms: processingTimeMs,
+      model,
+      mode
+    });
+
     // Schedule batch update to local storage
     this.scheduleBatchUpdate();
 
@@ -322,6 +335,9 @@ export class OptimizedAnalyticsManager extends EventEmitter {
     if (this.pendingUpdates.sessions > 0) {
       await this.performBatchUpdate();
     }
+
+    // Drain any buffered anonymous events before quit.
+    await posthog.shutdown();
   }
 
   // Subscribe to real-time stats updates

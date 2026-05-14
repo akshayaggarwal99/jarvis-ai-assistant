@@ -25,6 +25,12 @@ build/*.target.mk
 .env.production.local
 .env.signing
 .env.*
+# Allow committed example/template env files so contributors know the shape.
+!.env.example
+!.env.posthog.example
+!scripts/notarization/.env.example
+!scripts/notarization/.env.posthog.example
+!scripts/notarization/.env.signing.example
 
 # Editor directories and files
 .vscode/
@@ -109,6 +115,8 @@ build/
 scripts/notarization/.env.signing
 scripts/notarization/*.log
 scripts/*
+!scripts/notarization
+!scripts/notarization/.env.posthog.example
 build/*
 build/Makefile
 
