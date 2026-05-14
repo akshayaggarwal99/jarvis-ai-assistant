@@ -134,6 +134,13 @@ const EmailDictationScreen: React.FC<EmailDictationScreenProps> = ({ onNext }) =
         electronAPI.setEmailTutorialMode(false);
       });
     }
+
+    // Show the waveform overlay so the user gets the same visual + sound
+    // they'll see in normal post-onboarding use.
+    if (electronAPI?.showWaveform) {
+      electronAPI.showWaveform();
+      cleanupFunctionsRef.current.push(() => electronAPI.hideWaveform?.());
+    }
     
     // Get user settings to display correct hotkey and user name
     if (electronAPI?.getUserSettings) {

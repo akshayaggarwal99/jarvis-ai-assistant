@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   posthogCapture: (event: string, properties?: Record<string, any>) =>
     ipcRenderer.invoke('posthog:capture', event, properties),
   preloadLocalModel: () => ipcRenderer.invoke('model:preload'),
+  showWaveform: () => ipcRenderer.invoke('waveform:show'),
+  hideWaveform: () => ipcRenderer.invoke('waveform:hide'),
   onStatsUpdate: (callback: (stats: any) => void) => {
     console.log('📊 [Preload] Setting up onStatsUpdate listener');
     const listener = (_event: any, stats: any) => {

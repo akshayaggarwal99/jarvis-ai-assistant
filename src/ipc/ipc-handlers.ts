@@ -137,6 +137,24 @@ export class IPCHandlers {
       }
     });
 
+    // Show or hide the waveform window from the renderer. Used by the
+    // onboarding tutorial screens so the user sees the same waveform
+    // overlay they'll see in normal use.
+    safeRegisterHandler('waveform:show', async () => {
+      try {
+        const win = this.windowManager.getWindow('waveform');
+        if (win && !win.isDestroyed()) win.showInactive();
+        return true;
+      } catch (err) { Logger.debug('[IPC] waveform:show failed:', err); return false; }
+    });
+    safeRegisterHandler('waveform:hide', async () => {
+      try {
+        const win = this.windowManager.getWindow('waveform');
+        if (win && !win.isDestroyed() && win.isVisible()) win.hide();
+        return true;
+      } catch (err) { Logger.debug('[IPC] waveform:hide failed:', err); return false; }
+    });
+
     // Warm the configured local transcription model from the renderer.
     // Called right after the user picks/downloads a model in onboarding or
     // Settings so the first dictation doesn't pay the cold-load tax.

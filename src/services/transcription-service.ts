@@ -89,6 +89,14 @@ export class TranscriptionService {
   }
   
   private async pasteTranscription(transcription: string): Promise<void> {
+    // Skip the native paste when the onboarding voice tutorial is active —
+    // the tutorial screen already shows the transcript via the
+    // tutorial-transcription IPC, and a second native cmd+v inserts the
+    // text again into the focused textarea (visible as "pasted twice").
+    if ((global as any).isVoiceTutorialMode) {
+      Logger.info('🎯 [Tutorial] Skipping native paste in voice tutorial mode (renderer renders the text directly)');
+      return;
+    }
     try {
       const { AudioProcessor } = require('../audio/processor');
       await AudioProcessor.pasteText(transcription);

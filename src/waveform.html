@@ -400,10 +400,12 @@
             console.error('Failed to create AudioContext:', error);
         }
 
-        // Sound effects
+        // Sound effects — the buduppp/poop tones are the canonical
+        // Jarvis voice cue. They always play (no setting gate) since the
+        // legacy afplay path was the user-toggleable one and has been
+        // removed.
         function playStartSound() {
-            console.log('🔊 [Waveform] playStartSound called, audioFeedbackEnabled:', audioFeedbackEnabled);
-            if (!audioFeedbackEnabled) return; // Respect audio feedback setting
+            console.log('🔊 [Waveform] playStartSound called');
             
             // ⚡ INSTANT AUDIO - Create or reuse audio context
             if (!sharedAudioContext) {
@@ -458,8 +460,8 @@
         }
 
         function playStopSound() {
-            console.log('🔊 [Waveform] playStopSound called, audioFeedbackEnabled:', audioFeedbackEnabled);
-            if (!audioFeedbackEnabled || !sharedAudioContext) return; // Respect audio feedback setting
+            console.log('🔊 [Waveform] playStopSound called');
+            if (!sharedAudioContext) return;
             // Create a downward "poop" stop sound (very low volume)
             const audioContext = sharedAudioContext;
             

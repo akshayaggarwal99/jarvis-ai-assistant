@@ -20,10 +20,10 @@ const VoiceTranscriptionScreen: React.FC<VoiceTranscriptionScreenProps> = ({ onN
   // AI post-processing (which can be off or slow on first run). Avoids
   // numbered-list samples that depend on AI formatting to look right.
   const placeholderText = useMemo(() => {
-    if (isRecording) return "Hey, can you wait for me at the restaurant at four pm";
+    if (isRecording) return "Hey can you wait for me at the restaurant at 4pm?";
     if (isProcessing) return "⚡ Processing...";
     if (hasTranscribed) return "Great! Try speaking again to add more content.";
-    return "Hey, can you wait for me at the restaurant at four pm";
+    return "Hey can you wait for me at the restaurant at 4pm?";
   }, [isRecording, isProcessing, hasTranscribed, currentHotkey]);
 
   // Focus text area utility
@@ -101,6 +101,13 @@ const VoiceTranscriptionScreen: React.FC<VoiceTranscriptionScreenProps> = ({ onN
       electronAPI.setVoiceTutorialMode(true);
       console.log('✅ [VoiceTranscription] Voice tutorial mode enabled - real transcription active');
       cleanupFunctionsRef.current.push(() => electronAPI.setVoiceTutorialMode(false));
+    }
+
+    // Show the waveform overlay so the user sees and hears the same cue
+    // they'll get in normal post-onboarding use.
+    if (electronAPI?.showWaveform) {
+      electronAPI.showWaveform();
+      cleanupFunctionsRef.current.push(() => electronAPI.hideWaveform?.());
     }
     
     // Start the full hotkey monitoring system for audio recording
