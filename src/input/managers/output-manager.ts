@@ -14,19 +14,50 @@ export class OutputManager {
   }
 
   /**
+   * When the onboarding voice tutorial is active, skip the native paste
+   * entirely and let the renderer render the transcript directly via the
+   * tutorial-transcription IPC event. Without this, FastStreamingPaster
+   * fires cmd+v into the focused tutorial textarea AND the renderer also
+   * sets the transcription text — user sees the text inserted twice.
+   * Returns true if handled (caller should skip its paste path).
+   */
+  private handleTutorialOutput(text: string): boolean {
+    if (!(global as any).isVoiceTutorialMode) return false;
+    try {
+      const { BrowserWindow } = require('electron');
+      const windows = BrowserWindow.getAllWindows();
+      Logger.info(`🎯 [Tutorial] Routing transcript to ${windows.length} window(s) instead of native paste`);
+      windows.forEach((window: any) => {
+        if (window && !window.isDestroyed()) {
+          window.webContents.send('tutorial-transcription', text);
+        }
+      });
+      (global as any).lastTranscription = text;
+    } catch (err) {
+      Logger.warning('[Tutorial] Failed to route transcript to tutorial window:', err);
+    }
+    return true;
+  }
+
+  /**
    * Output text using the most appropriate method
    */
   async outputText(text: string, modelUsed: string, options: OutputOptions = {}): Promise<void> {
     const outputStartTime = Date.now();
     const keyReleaseTime = (global as any).keyReleaseTime || outputStartTime;
-    
+
     Logger.info(`📋 [Output] Starting text output: "${text.substring(0, 50)}..."`);
     Logger.performance('🟢 [TIMING] Key release → Output started', outputStartTime - keyReleaseTime);
+
+    if (this.handleTutorialOutput(text)) {
+      this.clearDictationMode();
+      return;
+    }
 
     try {
       // Choose output method based on options and context
       const method = this.selectOutputMethod(text, options);
-      
+
       await this.executeOutput(text, method, modelUsed);
       
       const outputTime = Date.now() - outputStartTime;
@@ -74,9 +105,14 @@ export class OutputManager {
   async outputTextUltraFast(text: string, modelUsed: string): Promise<void> {
     const outputStartTime = Date.now();
     const keyReleaseTime = (global as any).keyReleaseTime || outputStartTime;
-    
+
     Logger.info('⚡ [Output] Using ultra-fast streaming paste');
-    
+
+    if (this.handleTutorialOutput(text)) {
+      this.clearDictationMode();
+      return;
+    }
+
     try {
       await FastStreamingPaster.pasteFast(text);
       
