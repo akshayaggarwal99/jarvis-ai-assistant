@@ -825,6 +825,7 @@ function startHotkeyMonitoring() {
   const dictationHandlers = DictationIPCHandlers.getInstance();
   dictationHandlers.setPushToTalkService(pushToTalkService);
   dictationHandlers.setTranscripts(transcripts);
+  dictationHandlers.setAnalyticsManager(analyticsManager);
   dictationHandlers.setCallbacks(
     createDashboardWindow,
     setDictationMode,

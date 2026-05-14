@@ -4,4 +4,5 @@
 export { DashboardView } from './DashboardView';
 export { DictionaryView, type DictionaryEntry } from './DictionaryView';
 export { AnalyticsView } from './AnalyticsView';
+export { DictationView } from './DictationView';
 export { HelpView } from './HelpView';

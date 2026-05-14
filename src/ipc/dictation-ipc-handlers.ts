@@ -5,16 +5,18 @@ import { ipcMain } from 'electron';
 import { Logger } from '../core/logger';
 import { AudioProcessor } from '../audio/processor';
 import { PushToTalkService } from '../input/push-to-talk-refactored';
+import { OptimizedAnalyticsManager } from '../analytics/optimized-analytics-manager';
 
 export class DictationIPCHandlers {
   private static instance: DictationIPCHandlers;
   private handlersRegistered = false;
-  
+
   private pushToTalkService: PushToTalkService | null = null;
   private transcripts: any[] = [];
   private createDashboardWindowFn: (() => void) | null = null;
   private setDictationModeFn: ((mode: boolean) => void) | null = null;
   private isHandsFreeModeActiveRef: { value: boolean } = { value: false };
+  private analyticsManager: OptimizedAnalyticsManager | null = null;
   
   private constructor() {}
   
@@ -41,6 +43,10 @@ export class DictationIPCHandlers {
     this.createDashboardWindowFn = createDashboardWindow;
     this.setDictationModeFn = setDictationMode;
     this.isHandsFreeModeActiveRef = isHandsFreeModeActiveRef;
+  }
+
+  setAnalyticsManager(manager: OptimizedAnalyticsManager): void {
+    this.analyticsManager = manager;
   }
   
   registerHandlers(): void {
@@ -106,7 +112,28 @@ export class DictationIPCHandlers {
       const lastTranscription = (global as any).lastTranscription;
       return lastTranscription || '';
     });
-    
+
+    // Recent dictation sessions + lifetime stats for the Dictation view.
+    // Returns { sessions, stats } in one round-trip.
+    ipcMain.handle('dictation:recent', async (_event, limit?: number) => {
+      try {
+        if (!this.analyticsManager) {
+          return { sessions: [], stats: null };
+        }
+        const max = typeof limit === 'number' && limit > 0 ? Math.min(limit, 500) : 50;
+        const stats = await this.analyticsManager.getStats();
+        const storage: any = (this.analyticsManager as any).storage;
+        const userId: string = this.analyticsManager.getCurrentUserId();
+        const sessions = storage?.getUserSessions
+          ? await storage.getUserSessions(userId, max)
+          : [];
+        return { sessions, stats };
+      } catch (err) {
+        Logger.error('[dictation:recent] failed:', err);
+        return { sessions: [], stats: null };
+      }
+    });
+
     this.handlersRegistered = true;
     Logger.info('✅ DictationIPCHandlers registered');
   }

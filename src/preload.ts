@@ -5,6 +5,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('electronAPI', {
   getStats: () => ipcRenderer.invoke('get-stats'),
   refreshAnalytics: () => ipcRenderer.invoke('refresh-analytics'),
+  dictationRecent: (limit?: number) => ipcRenderer.invoke('dictation:recent', limit),
   onStatsUpdate: (callback: (stats: any) => void) => {
     console.log('📊 [Preload] Setting up onStatsUpdate listener');
     const listener = (_event: any, stats: any) => {

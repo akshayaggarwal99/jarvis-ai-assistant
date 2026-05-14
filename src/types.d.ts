@@ -4,6 +4,7 @@ declare module 'node-record-lpcm16' {
 
 interface ElectronAPI {
   getStats: () => Promise<any>;
+  dictationRecent: (limit?: number) => Promise<{ sessions: any[]; stats: any | null }>;
   onStatsUpdate: (callback: (stats: any) => void) => void;
   pasteLastTranscription: () => void;
   startDictation: () => void;
