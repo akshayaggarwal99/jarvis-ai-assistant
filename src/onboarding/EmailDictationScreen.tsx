@@ -181,17 +181,18 @@ const EmailDictationScreen: React.FC<EmailDictationScreenProps> = ({ onNext }) =
       });
     }
 
-    // Register IPC handlers
-    if (electronAPI?.ipcRenderer) {
-      electronAPI.ipcRenderer.on('push-to-talk-state', handlePushToTalkStateChange);
-      electronAPI.ipcRenderer.on('transcription-state', handleTranscriptionStateChange);
-      electronAPI.ipcRenderer.on('tutorial-transcription', handleTutorialTranscription);
-      
-      cleanupFunctionsRef.current.push(() => {
-        electronAPI.ipcRenderer.removeListener('push-to-talk-state', handlePushToTalkStateChange);
-        electronAPI.ipcRenderer.removeListener('transcription-state', handleTranscriptionStateChange);
-        electronAPI.ipcRenderer.removeListener('tutorial-transcription', handleTutorialTranscription);
-      });
+    // Register IPC handlers via the preload-exposed wrappers. The raw
+    // electronAPI.ipcRenderer is deliberately not exposed, so the previous
+    // ipcRenderer.on calls were no-ops — recording state never flipped back
+    // to false and the screen got stuck on "Recording...".
+    if (electronAPI?.onPushToTalkStateChange) {
+      electronAPI.onPushToTalkStateChange(handlePushToTalkStateChange);
+    }
+    if (electronAPI?.onTranscriptionStateChange) {
+      electronAPI.onTranscriptionStateChange(handleTranscriptionStateChange);
+    }
+    if (electronAPI?.onTutorialTranscription) {
+      electronAPI.onTutorialTranscription((text: string) => handleTutorialTranscription(null, text));
     }
 
     // Cleanup function

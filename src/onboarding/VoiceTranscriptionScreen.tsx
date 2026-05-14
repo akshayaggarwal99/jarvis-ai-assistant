@@ -136,17 +136,19 @@ const VoiceTranscriptionScreen: React.FC<VoiceTranscriptionScreenProps> = ({ onN
     
     fetchHotkey();
     
-    // Register for push-to-talk state changes
-    if (electronAPI?.ipcRenderer) {
-      electronAPI.ipcRenderer.on('push-to-talk-state', handlePushToTalkStateChange);
-      electronAPI.ipcRenderer.on('transcription-state', handleTranscriptionStateChange);
-      electronAPI.ipcRenderer.on('tutorial-transcription', handleTutorialTranscription);
-      
-      cleanupFunctionsRef.current.push(() => {
-        electronAPI.ipcRenderer.removeListener('push-to-talk-state', handlePushToTalkStateChange);
-        electronAPI.ipcRenderer.removeListener('transcription-state', handleTranscriptionStateChange);
-        electronAPI.ipcRenderer.removeListener('tutorial-transcription', handleTutorialTranscription);
-      });
+    // Register for push-to-talk, transcription, and tutorial-result events.
+    // The preload exposes wrapper functions (not the raw ipcRenderer) — using
+    // the wrappers is what actually subscribes us. The previous
+    // electronAPI.ipcRenderer.on(...) calls were no-ops because ipcRenderer
+    // isn't exposed by design, which left isRecording stuck on true forever.
+    if (electronAPI?.onPushToTalkStateChange) {
+      electronAPI.onPushToTalkStateChange(handlePushToTalkStateChange);
+    }
+    if (electronAPI?.onTranscriptionStateChange) {
+      electronAPI.onTranscriptionStateChange(handleTranscriptionStateChange);
+    }
+    if (electronAPI?.onTutorialTranscription) {
+      electronAPI.onTutorialTranscription((text: string) => handleTutorialTranscription(null, text));
     }
     
     return () => {
@@ -171,7 +173,7 @@ const VoiceTranscriptionScreen: React.FC<VoiceTranscriptionScreenProps> = ({ onN
           Press and hold <span className={`${theme.text.primary} font-medium`}>({currentHotkey})</span> to start dictating. Release when done speaking.
         </p>
         <p className={`text-xs ${theme.text.tertiary} font-normal`}>
-          Watch as Jarvis <span className="text-blue-400 italic">auto-formats lists for you.</span>
+          Speak naturally — Jarvis transcribes locally and pastes at your cursor.
         </p>
       </div>
 
