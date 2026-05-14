@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Analytics tab**: Replaced by the new Dictation tab, which covers the same headline stats plus the session history the old Analytics tab was missing.
 
 ### Fixed
+- **Update notification popup**: long release notes no longer push the Install button off-screen. The notes container now scrolls (capped at 40% viewport height). Markdown syntax (`##`, `**`, `` ` ``) is stripped to plain text.
 - **Parakeet/Sherpa-ONNX local transcription**: Long utterances no longer freeze the app and dictation no longer silently stops after a long session.
   - `recognizer.decode()` was synchronous and blocked the Electron main process for several seconds on multi-second audio, starving IPC and audio-capture callbacks. Switched to `decodeAsync()`.
   - The singleton recognizer was never reset after a native error; one bad decode poisoned every subsequent call. Failed transcriptions now recycle the recognizer.

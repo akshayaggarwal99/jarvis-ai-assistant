@@ -9,6 +9,27 @@ interface UpdateNotificationProps {
   onDismiss: () => void;
 }
 
+/**
+ * Cheap markdown-to-plain-text. Strips headings (#), bold (**), italic (*),
+ * inline code (`), and link wrappers — leaves the readable content. Avoids a
+ * full markdown parser dependency since we just need release notes legible.
+ */
+function stripMarkdown(input: string): string {
+  if (!input) return '';
+  return input
+    .replace(/```[\s\S]*?```/g, '')           // fenced code blocks
+    .replace(/^#{1,6}\s+/gm, '')              // headings
+    .replace(/\*\*([^*]+)\*\*/g, '$1')        // bold
+    .replace(/__([^_]+)__/g, '$1')            // bold (alt)
+    .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '$1') // italic
+    .replace(/_([^_\n]+)_/g, '$1')            // italic (alt)
+    .replace(/`([^`\n]+)`/g, '$1')            // inline code
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')  // links → label only
+    .replace(/^\s*[-*+]\s+/gm, '• ')          // list bullets
+    .replace(/\n{3,}/g, '\n\n')               // collapse extra blank lines
+    .trim();
+}
+
 export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
   isVisible,
   version,
@@ -44,9 +65,9 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
           <h3 className="text-lg font-medium text-white mb-4">
             Jarvis {version}
           </h3>
-          <p className="text-white/70 mb-8 leading-relaxed text-sm">
-            {releaseNotes}
-          </p>
+          <div className="text-white/70 mb-8 leading-relaxed text-sm max-h-[40vh] overflow-y-auto whitespace-pre-wrap pr-2">
+            {stripMarkdown(releaseNotes)}
+          </div>
           
           {/* Modern actions for major updates */}
           <div className="flex flex-col space-y-3">
@@ -101,9 +122,9 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
       <p className="text-sm text-white/80 mb-1">
         Jarvis {version} is ready to download
       </p>
-      <p className="text-xs text-white/60 mb-4 leading-relaxed">
-        {releaseNotes}
-      </p>
+      <div className="text-xs text-white/60 mb-4 leading-relaxed max-h-[40vh] overflow-y-auto whitespace-pre-wrap pr-2">
+        {stripMarkdown(releaseNotes)}
+      </div>
       
       {/* Action button */}
       <button 
