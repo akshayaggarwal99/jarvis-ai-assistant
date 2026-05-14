@@ -807,7 +807,7 @@ const Settings: React.FC = () => {
     <button
       onClick={onToggle}
       disabled={disabled}
-      className={`relative w-12 h-6 rounded-full transition-all duration-200 ${enabled
+      className={`relative w-12 h-6 flex-shrink-0 rounded-full transition-all duration-200 ${enabled
         ? `${theme.glass.secondary} border border-white/20`
         : `${theme.glass.secondary} border border-white/10`
         } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
