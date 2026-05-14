@@ -1,20 +1,42 @@
 import React, { useState, useEffect } from 'react';
 import { theme } from '../styles/theme';
+import { PARAKEET_MODELS } from '../transcription/sherpa-models';
 
 interface ApiKeySetupScreenProps {
   onNext: () => void;
   onApiKeysChange?: (hasKeys: boolean) => void;
 }
 
-// Local Whisper model options
-const WHISPER_MODELS = [
-  { id: 'tiny.en', name: 'Tiny (English)', size: '75 MB', speed: 'Fastest' },
-  { id: 'tiny', name: 'Tiny (Multi)', size: '75 MB', speed: 'Fastest' },
-  { id: 'base.en', name: 'Base (English)', size: '142 MB', speed: 'Fast' },
-  { id: 'base', name: 'Base (Multi)', size: '142 MB', speed: 'Fast' },
-  { id: 'small.en', name: 'Small (English)', size: '466 MB', speed: 'Medium' },
-  { id: 'small', name: 'Small (Multi)', size: '466 MB', speed: 'Medium' },
+interface LocalModelOption {
+  id: string;
+  name: string;
+  size: string;
+  speed: string;
+  family: 'whisper' | 'parakeet';
+  description?: string;
+}
+
+const WHISPER_MODELS: LocalModelOption[] = [
+  { id: 'tiny.en', name: 'Whisper Tiny (English)', size: '75 MB', speed: 'Fastest', family: 'whisper' },
+  { id: 'tiny', name: 'Whisper Tiny (Multi)', size: '75 MB', speed: 'Fastest', family: 'whisper' },
+  { id: 'base.en', name: 'Whisper Base (English)', size: '142 MB', speed: 'Fast', family: 'whisper' },
+  { id: 'base', name: 'Whisper Base (Multi)', size: '142 MB', speed: 'Fast', family: 'whisper' },
+  { id: 'small.en', name: 'Whisper Small (English)', size: '466 MB', speed: 'Medium', family: 'whisper' },
+  { id: 'small', name: 'Whisper Small (Multi)', size: '466 MB', speed: 'Medium', family: 'whisper' },
 ];
+
+// Pulled from the canonical PARAKEET_MODELS list — keeps onboarding in sync
+// with Settings → AI Models without a second hardcoded copy.
+const PARAKEET_OPTIONS: LocalModelOption[] = PARAKEET_MODELS.map(m => ({
+  id: m.id,
+  name: m.name,
+  size: m.size,
+  speed: 'Fast (English)',
+  family: 'parakeet' as const,
+  description: m.description
+}));
+
+const LOCAL_MODELS: LocalModelOption[] = [...PARAKEET_OPTIONS, ...WHISPER_MODELS];
 
 const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeysChange }) => {
   const [deepgramKey, setDeepgramKey] = useState('');
@@ -24,20 +46,29 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [hasExistingKeys, setHasExistingKeys] = useState(false);
-  const [useLocalWhisper, setUseLocalWhisper] = useState(false);
+  const [useLocalModel, setUseLocalModel] = useState(false);
+
+  // AI cleanup intelligence: gemini | ollama | none
+  // "none" makes Step 2 truly optional — raw transcription only.
+  const [aiChoice, setAiChoice] = useState<'gemini' | 'ollama' | 'none'>('gemini');
 
   // Ollama state
-  const [useOllama, setUseOllama] = useState(false);
   const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434');
   const [ollamaModel, setOllamaModel] = useState('llama3');
   const [availableOllamaModels, setAvailableOllamaModels] = useState<string[]>([]);
   const [ollamaStatus, setOllamaStatus] = useState<'connected' | 'error' | 'checking' | 'idle'>('idle');
 
-  // Whisper Model state
-  const [localWhisperModel, setLocalWhisperModel] = useState('tiny.en');
+  // Unified local-model state — covers both Whisper and Parakeet families.
+  // Persisted as the modern useLocalModel + localModelId fields so the app
+  // actually honors the choice (the legacy useLocalWhisper fields are gone
+  // from AppSettings).
+  const [localModelId, setLocalModelId] = useState('tiny.en');
   const [downloadingModel, setDownloadingModel] = useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [downloadedModels, setDownloadedModels] = useState<string[]>([]);
+
+  // Convenience flag for downstream legacy code that still expects useOllama.
+  const useOllama = aiChoice === 'ollama';
 
   // Load existing keys and settings on mount
   useEffect(() => {
@@ -63,23 +94,32 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
         if (electronAPI?.appGetSettings) {
           const settings = await electronAPI.appGetSettings();
           if (settings) {
-            if (settings.useLocalWhisper) setUseLocalWhisper(true);
-            if (settings.localWhisperModel) setLocalWhisperModel(settings.localWhisperModel);
-            if (settings.useOllama) setUseOllama(true);
+            if (settings.useLocalModel) setUseLocalModel(true);
+            if (settings.localModelId) setLocalModelId(settings.localModelId);
+            if (settings.useOllama) {
+              setAiChoice('ollama');
+            } else if (settings.aiPostProcessing === false) {
+              setAiChoice('none');
+            } else {
+              setAiChoice('gemini');
+            }
             if (settings.ollamaUrl) setOllamaUrl(settings.ollamaUrl);
             if (settings.ollamaModel) setOllamaModel(settings.ollamaModel);
 
-            // If enabled, fetch models immediately
-            if (settings.useOllama || useOllama) {
+            if (settings.useOllama) {
               fetchOllamaModels(settings.ollamaUrl || ollamaUrl);
             }
           }
         }
 
-        // Load downloaded whisper models
+        // Load downloaded local models (both Whisper and Parakeet)
         if (electronAPI?.whisperGetDownloadedModels) {
           const models = await electronAPI.whisperGetDownloadedModels();
-          setDownloadedModels(models || []);
+          setDownloadedModels(prev => Array.from(new Set([...prev, ...(models || [])])));
+        }
+        if (electronAPI?.sherpaGetDownloadedModels) {
+          const models = await electronAPI.sherpaGetDownloadedModels();
+          setDownloadedModels(prev => Array.from(new Set([...prev, ...(models || [])])));
         }
       } catch (error) {
         console.error('Failed to load API keys:', error);
@@ -92,7 +132,7 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
   useEffect(() => {
     // Always allow continuing, keys are optional now
     onApiKeysChange?.(true);
-  }, [geminiKey, useLocalWhisper, useOllama, onApiKeysChange]);
+  }, [geminiKey, useLocalModel, aiChoice, onApiKeysChange]);
 
   const fetchOllamaModels = async (url: string) => {
     if (!url) return;
@@ -126,50 +166,64 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
     }
   };
 
-  const handleLocalWhisperModelChange = async (modelId: string) => {
+  const isParakeetModel = (modelId: string): boolean =>
+    PARAKEET_OPTIONS.some(p => p.id === modelId);
+
+  const handleLocalModelChange = async (modelId: string) => {
     try {
       const electronAPI = (window as any).electronAPI;
-
-      // Check if model is already downloaded
       const isDownloaded = downloadedModels.includes(modelId);
+      const isParakeet = isParakeetModel(modelId);
 
-      if (!isDownloaded && electronAPI?.whisperDownloadModel) {
-        // Start downloading
+      if (!isDownloaded) {
         setDownloadingModel(modelId);
         setDownloadProgress(0);
 
-        // Set up progress listener
-        electronAPI.onWhisperDownloadProgress?.((data: { modelId: string; percent: number }) => {
-          if (data.modelId === modelId) {
-            setDownloadProgress(data.percent);
+        if (isParakeet) {
+          // Parakeet download path
+          if (electronAPI?.onSherpaDownloadProgress) {
+            electronAPI.onSherpaDownloadProgress((data: { modelId: string; percent: number }) => {
+              if (data.modelId === modelId) setDownloadProgress(data.percent);
+            });
           }
-        });
-
-        // Download the model
-        const result = await electronAPI.whisperDownloadModel(modelId);
-
-        // Clean up listener
-        electronAPI.removeWhisperDownloadProgressListener?.();
-
-        if (!result?.success) {
-          console.error('Failed to download model');
-          setDownloadingModel(null);
-          return;
+          const result = electronAPI?.sherpaDownloadModel
+            ? await electronAPI.sherpaDownloadModel(modelId)
+            : { success: false };
+          electronAPI?.removeSherpaDownloadProgressListener?.();
+          if (!result?.success) {
+            console.error('Failed to download Parakeet model');
+            setDownloadingModel(null);
+            return;
+          }
+        } else {
+          // Whisper download path
+          if (electronAPI?.onWhisperDownloadProgress) {
+            electronAPI.onWhisperDownloadProgress((data: { modelId: string; percent: number }) => {
+              if (data.modelId === modelId) setDownloadProgress(data.percent);
+            });
+          }
+          const result = electronAPI?.whisperDownloadModel
+            ? await electronAPI.whisperDownloadModel(modelId)
+            : { success: false };
+          electronAPI?.removeWhisperDownloadProgressListener?.();
+          if (!result?.success) {
+            console.error('Failed to download Whisper model');
+            setDownloadingModel(null);
+            return;
+          }
         }
 
-        // Update downloaded models list
-        setDownloadedModels(prev => [...prev, modelId]);
+        setDownloadedModels(prev => Array.from(new Set([...prev, modelId])));
         setDownloadingModel(null);
       }
 
-      // Save the model selection
-      // setSaving(true); // Don't block whole UI, just update locally + background save
+      // Persist using the modern field names the app actually reads.
       if (electronAPI?.appUpdateSettings) {
-        await electronAPI.appUpdateSettings({ localWhisperModel: modelId });
-        setLocalWhisperModel(modelId);
+        await electronAPI.appUpdateSettings({ localModelId: modelId });
+        setLocalModelId(modelId);
       }
     } catch (error) {
-      console.error('Failed to change whisper model:', error);
+      console.error('Failed to change local model:', error);
       setDownloadingModel(null);
     }
   };
@@ -186,9 +240,10 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
       }
       if (electronAPI?.appUpdateSettings) {
         await electronAPI.appUpdateSettings({
-          useLocalWhisper,
-          localWhisperModel,
-          useOllama,
+          useLocalModel,
+          localModelId,
+          useOllama: aiChoice === 'ollama',
+          aiPostProcessing: aiChoice !== 'none',
           ollamaUrl,
           ollamaModel
         });
@@ -212,16 +267,31 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
     }
   };
 
-  const toggleLocalWhisper = async () => {
-    const newValue = !useLocalWhisper;
-    setUseLocalWhisper(newValue);
+  const toggleLocalModel = async () => {
+    const newValue = !useLocalModel;
+    setUseLocalModel(newValue);
     try {
       const electronAPI = (window as any).electronAPI;
       if (electronAPI?.appUpdateSettings) {
-        await electronAPI.appUpdateSettings({ useLocalWhisper: newValue });
+        await electronAPI.appUpdateSettings({ useLocalModel: newValue });
       }
     } catch (error) {
-      console.error('Failed to toggle local whisper:', error);
+      console.error('Failed to toggle local model:', error);
+    }
+  };
+
+  const setAiChoiceAndPersist = async (choice: 'gemini' | 'ollama' | 'none') => {
+    setAiChoice(choice);
+    try {
+      const electronAPI = (window as any).electronAPI;
+      if (electronAPI?.appUpdateSettings) {
+        await electronAPI.appUpdateSettings({
+          useOllama: choice === 'ollama',
+          aiPostProcessing: choice !== 'none'
+        });
+      }
+    } catch (error) {
+      console.error('Failed to set AI choice:', error);
     }
   };
 
@@ -265,37 +335,37 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          {/* Local Whisper Option */}
+          {/* Local Model Option (Whisper + Parakeet) */}
           <button
-            onClick={toggleLocalWhisper}
-            className={`p-4 rounded-xl text-left transition-all ${useLocalWhisper
+            onClick={toggleLocalModel}
+            className={`p-4 rounded-xl text-left transition-all ${useLocalModel
               ? 'bg-green-500/10 border-2 border-green-500/40'
               : 'bg-white/5 border-2 border-white/10 hover:border-white/20'
               }`}
           >
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium text-green-400">FREE</span>
-              {useLocalWhisper && (
+              <span className="text-xs font-medium text-green-400">FREE · OFFLINE</span>
+              {useLocalModel && (
                 <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
               )}
             </div>
-            <h4 className={`text-sm font-medium ${theme.text.primary} mb-1`}>Local Whisper</h4>
-            <p className={`text-xs ${theme.text.tertiary}`}>Runs on your Mac, 100% offline</p>
+            <h4 className={`text-sm font-medium ${theme.text.primary} mb-1`}>Local Model</h4>
+            <p className={`text-xs ${theme.text.tertiary}`}>Parakeet or Whisper — runs on your Mac</p>
           </button>
 
           {/* Deepgram Option */}
           <button
-            onClick={() => setUseLocalWhisper(false)}
-            className={`p-4 rounded-xl text-left transition-all ${!useLocalWhisper
+            onClick={() => setUseLocalModel(false)}
+            className={`p-4 rounded-xl text-left transition-all ${!useLocalModel
               ? 'bg-blue-500/10 border-2 border-blue-500/40'
               : 'bg-white/5 border-2 border-white/10 hover:border-white/20'
               }`}
           >
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-blue-400">$200 FREE</span>
-              {!useLocalWhisper && (
+              {!useLocalModel && (
                 <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
@@ -308,27 +378,39 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
 
 
 
-        {/* Local Whisper Model Selector (only show if local selected) */}
-        {useLocalWhisper && (
+        {/* Local Model Selector (Parakeet + Whisper, shown only if local selected) */}
+        {useLocalModel && (
           <div className="mt-4">
             <label className={`text-xs font-medium ${theme.text.secondary} mb-2 block`}>
-              Select Whisper Model {downloadingModel && <span className="text-emerald-400 ml-2">Downloading... {Math.round(downloadProgress)}%</span>}
+              Select Local Model {downloadingModel && <span className="text-emerald-400 ml-2">Downloading... {Math.round(downloadProgress)}%</span>}
             </label>
             <div className="relative">
               <select
-                value={localWhisperModel}
-                onChange={(e) => handleLocalWhisperModelChange(e.target.value)}
+                value={localModelId}
+                onChange={(e) => handleLocalModelChange(e.target.value)}
                 disabled={!!downloadingModel}
                 className={`w-full bg-black/40 rounded-xl px-4 py-2.5 text-white border border-white/20 focus:border-white/40 focus:outline-none transition-colors text-xs appearance-none ${downloadingModel ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
               >
-                {WHISPER_MODELS.map((model) => {
-                  const isDownloaded = downloadedModels.includes(model.id);
-                  return (
-                    <option key={model.id} value={model.id} className="bg-gray-900 text-white py-2">
-                      {model.name} - {model.size} {isDownloaded ? '✓' : '↓'}
-                    </option>
-                  );
-                })}
+                <optgroup label="Parakeet (recommended)">
+                  {PARAKEET_OPTIONS.map((model) => {
+                    const isDownloaded = downloadedModels.includes(model.id);
+                    return (
+                      <option key={model.id} value={model.id} className="bg-gray-900 text-white py-2">
+                        {model.name} — {model.size} {isDownloaded ? '✓' : '↓'}
+                      </option>
+                    );
+                  })}
+                </optgroup>
+                <optgroup label="Whisper">
+                  {WHISPER_MODELS.map((model) => {
+                    const isDownloaded = downloadedModels.includes(model.id);
+                    return (
+                      <option key={model.id} value={model.id} className="bg-gray-900 text-white py-2">
+                        {model.name} — {model.size} {isDownloaded ? '✓' : '↓'}
+                      </option>
+                    );
+                  })}
+                </optgroup>
               </select>
               <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
                 <svg className="w-4 h-4 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -337,13 +419,13 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
               </div>
             </div>
             <p className={`text-[10px] ${theme.text.tertiary} mt-2`}>
-              Smaller models are faster. 'Tiny' is usually sufficient for dictation.
+              Parakeet TDT is the best accuracy/speed tradeoff for English. Whisper Tiny is the smallest if disk space matters.
             </p>
           </div>
         )}
 
         {/* Deepgram Key Input (only show if cloud selected) */}
-        {!useLocalWhisper && (
+        {!useLocalModel && (
           <div className="mt-4">
             <div className="flex items-center justify-between mb-2">
               <label className={`text-xs font-medium ${theme.text.secondary}`}>Deepgram API Key</label>
@@ -374,24 +456,28 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
         )}
       </div>
 
-      {/* Step 2: AI Intelligence */}
+      {/* Step 2: AI Intelligence (optional) */}
       <div className={`${theme.glass.primary} ${theme.radius.xl} p-5 ${theme.shadow} mb-4`}>
-        <div className="flex items-center gap-2 mb-4">
+        <div className="flex items-center gap-2 mb-2">
           <div className="w-6 h-6 bg-white/10 rounded-full flex items-center justify-center text-xs font-bold text-white">2</div>
-          <h3 className={`text-sm font-semibold ${theme.text.primary}`}>Choose AI Intelligence</h3>
+          <h3 className={`text-sm font-semibold ${theme.text.primary}`}>Choose AI Cleanup</h3>
+          <span className={`text-[10px] uppercase tracking-wider ${theme.text.quaternary} font-mono ml-auto`}>optional</span>
         </div>
+        <p className={`text-xs ${theme.text.tertiary} mb-4`}>
+          Runs after transcription to fix punctuation, formatting, and small errors. Adds ~1s latency. Skip it for fastest raw dictation.
+        </p>
 
         <div className="space-y-4">
           {/* Option A: Gemini */}
-          <div className={`p-4 rounded-xl border transition-all ${!useOllama ? 'bg-amber-500/10 border-amber-500/40' : 'bg-white/5 border-white/10'}`}>
-            <button className="w-full text-left flex items-center justify-between mb-2" onClick={() => setUseOllama(false)}>
+          <div className={`p-4 rounded-xl border transition-all ${aiChoice === 'gemini' ? 'bg-amber-500/10 border-amber-500/40' : 'bg-white/5 border-white/10'}`}>
+            <button className="w-full text-left flex items-center justify-between mb-2" onClick={() => setAiChoiceAndPersist('gemini')}>
               <div className="flex items-center gap-2">
                 <h4 className={`text-sm font-medium ${theme.text.primary}`}>Option A: Cloud AI (Gemini)</h4>
-                {!useOllama && <span className="text-xs text-amber-400 font-medium">Selected</span>}
+                {aiChoice === 'gemini' && <span className="text-xs text-amber-400 font-medium">Selected</span>}
               </div>
             </button>
 
-            <div className={`transition-all duration-300 ${useOllama ? 'opacity-50' : 'opacity-100'}`}>
+            <div className={`transition-all duration-300 ${aiChoice !== 'gemini' ? 'opacity-50' : 'opacity-100'}`}>
               <div className="flex items-center justify-between mb-2">
                 <label className={`text-xs font-medium ${theme.text.secondary}`}>Gemini API Key (Free)</label>
                 <button
@@ -407,7 +493,7 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
                   value={geminiKey}
                   onChange={(e) => {
                     setGeminiKey(e.target.value);
-                    if (e.target.value) setUseOllama(false);
+                    if (e.target.value && aiChoice !== 'gemini') setAiChoiceAndPersist('gemini');
                   }}
                   placeholder="AIza..."
                   className={`w-full bg-black/40 rounded-lg px-4 py-2.5 pr-16 text-white placeholder-white/40 border ${geminiKey.trim() ? 'border-green-500/40' : 'border-white/20'
@@ -428,20 +514,20 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
           </div>
 
           {/* Option B: Ollama */}
-          <div className={`p-4 rounded-xl border transition-all ${useOllama ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-white/5 border-white/10'}`}>
-            <button className="w-full text-left flex items-center justify-between mb-2" onClick={() => setUseOllama(true)}>
+          <div className={`p-4 rounded-xl border transition-all ${aiChoice === 'ollama' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-white/5 border-white/10'}`}>
+            <button className="w-full text-left flex items-center justify-between mb-2" onClick={() => setAiChoiceAndPersist('ollama')}>
               <div className="flex items-center gap-2">
                 <h4 className={`text-sm font-medium ${theme.text.primary}`}>Option B: Local AI (Ollama)</h4>
-                {useOllama && <span className="text-xs text-emerald-400 font-medium">Selected</span>}
+                {aiChoice === 'ollama' && <span className="text-xs text-emerald-400 font-medium">Selected</span>}
               </div>
-              {useOllama && (
+              {aiChoice === 'ollama' && (
                 <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
               )}
             </button>
 
-            {useOllama && (
+            {aiChoice === 'ollama' && (
               <div className="space-y-3 mt-3 animate-fadeIn">
                 <div>
                   <label className={`block text-xs font-medium ${theme.text.secondary} mb-1 flex items-center justify-between`}>
@@ -500,11 +586,31 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
                 </div>
               </div>
             )}
-            {!useOllama && (
+            {aiChoice !== 'ollama' && (
               <p className={`text-xs ${theme.text.tertiary}`}>
-                Run entirely locally. Requires [Ollama](https://ollama.com) installed.
+                Run entirely locally. Requires <a className="text-emerald-400 hover:underline" onClick={() => openExternalLink('https://ollama.com')}>Ollama</a> installed.
               </p>
             )}
+          </div>
+
+          {/* Option C: Skip — raw transcription only */}
+          <div className={`p-4 rounded-xl border transition-all ${aiChoice === 'none' ? 'bg-white/10 border-white/30' : 'bg-white/5 border-white/10'}`}>
+            <button className="w-full text-left flex items-center justify-between" onClick={() => setAiChoiceAndPersist('none')}>
+              <div className="flex items-center gap-2">
+                <h4 className={`text-sm font-medium ${theme.text.primary}`}>Option C: Skip — raw transcription only</h4>
+                {aiChoice === 'none' && (
+                  <>
+                    <span className={`text-xs ${theme.text.tertiary} font-medium`}>Selected</span>
+                    <svg className={`w-4 h-4 ${theme.text.secondary}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </>
+                )}
+              </div>
+            </button>
+            <p className={`text-xs ${theme.text.tertiary} mt-2`}>
+              Fastest. No API key, no cleanup. Just the words you spoke. You can turn this back on later in Settings.
+            </p>
           </div>
         </div>
       </div>
@@ -535,9 +641,15 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
       {/* Status summary */}
       <div className="mt-4 text-center">
         <p className={`text-xs ${theme.text.tertiary}`}>
-          {useLocalWhisper ? '🖥️ Local Whisper' : '☁️ Deepgram Cloud'}
+          {useLocalModel
+            ? `🖥️ Local ${isParakeetModel(localModelId) ? 'Parakeet' : 'Whisper'}`
+            : '☁️ Deepgram Cloud'}
           {' + '}
-          {useOllama ? `🦙 Local Ollama (${ollamaModel})` : (geminiKey.trim() ? '✅ Gemini AI' : '⚠️ No AI (Dictation Only)')}
+          {aiChoice === 'ollama'
+            ? `🦙 Local Ollama (${ollamaModel})`
+            : aiChoice === 'gemini'
+              ? (geminiKey.trim() ? '✅ Gemini AI' : '⚠️ Gemini key not set')
+              : '⚡ Raw transcription (no AI cleanup)'}
         </p>
       </div>
     </div>

@@ -179,14 +179,22 @@ const PermissionsScreen: React.FC<PermissionsScreenProps> = ({ onNext, onPermiss
   const requestPermission = async (type: keyof typeof permissions) => {
     try {
       let result;
-      
+
       if (type === 'microphone') {
         result = await (window as any).electronAPI?.requestMicrophonePermission();
       } else if (type === 'accessibility') {
         result = await (window as any).electronAPI?.requestAccessibilityPermission();
       }
-      
+
       if (result) {
+        // Anonymous funnel: surface which permission users deny — highest-
+        // value signal for onboarding drop-off diagnosis.
+        if (!result.granted) {
+          const api = (window as any).electronAPI;
+          if (api?.posthogCapture) {
+            api.posthogCapture('onboarding_permission_denied', { type: String(type) });
+          }
+        }
         setPermissions(prev => {
           const newPermissions = { ...prev, [type]: result.granted };
           const allGranted = Object.values(newPermissions).every(Boolean);
@@ -432,6 +440,9 @@ const OnboardingFlow: React.FC<{ onComplete: () => void }> = ({ onComplete }) =>
   // No PII, just step_id + step_index. Honors Settings.analytics toggle
   // on the main process side.
   const onboardingStartFiredRef = React.useRef(false);
+  const onboardingCompletedRef = React.useRef(false);
+  const lastViewedStepRef = React.useRef<{ id: string; index: number }>({ id: 'welcome', index: 0 });
+
   useEffect(() => {
     const api = (window as any).electronAPI;
     if (!api?.posthogCapture) return;
@@ -441,12 +452,30 @@ const OnboardingFlow: React.FC<{ onComplete: () => void }> = ({ onComplete }) =>
     }
     const step = steps[currentStep];
     if (step) {
+      lastViewedStepRef.current = { id: step.id, index: currentStep };
       api.posthogCapture('onboarding_step_viewed', {
         step_id: step.id,
         step_index: currentStep
       });
     }
   }, [currentStep]);
+
+  // Abandon signal: if the window unloads (user closes the window or quits)
+  // while onboarding hasn't completed, fire onboarding_abandoned with the
+  // last step they were on. Synchronous since the page is going away.
+  useEffect(() => {
+    const handler = () => {
+      if (onboardingCompletedRef.current) return;
+      const api = (window as any).electronAPI;
+      if (!api?.posthogCapture) return;
+      api.posthogCapture('onboarding_abandoned', {
+        last_step_id: lastViewedStepRef.current.id,
+        last_step_index: lastViewedStepRef.current.index
+      });
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, []);
 
   const nextStep = () => {
     const api = (window as any).electronAPI;
@@ -464,6 +493,7 @@ const OnboardingFlow: React.FC<{ onComplete: () => void }> = ({ onComplete }) =>
         setIsTransitioning(false);
       }, 150);
     } else {
+      onboardingCompletedRef.current = true;
       if (api?.posthogCapture) {
         api.posthogCapture('onboarding_completed', { total_steps: steps.length });
       }

@@ -16,12 +16,14 @@ const VoiceTranscriptionScreen: React.FC<VoiceTranscriptionScreenProps> = ({ onN
   const lastProcessedTranscriptionRef = useRef('');
   const cleanupFunctionsRef = useRef<(() => void)[]>([]);
 
-  // Memoized placeholder text with enhanced examples
+  // Placeholder: a simple, single-line sentence that works even without
+  // AI post-processing (which can be off or slow on first run). Avoids
+  // numbered-list samples that depend on AI formatting to look right.
   const placeholderText = useMemo(() => {
-    if (isRecording) return "I want to grab 3 things at the grocery store\n1. Milk for the cake\n2. Eggs for breakfast\n3. White bread";
+    if (isRecording) return "Hey, can you wait for me at the restaurant at four pm";
     if (isProcessing) return "⚡ Processing...";
     if (hasTranscribed) return "Great! Try speaking again to add more content.";
-    return "I want to grab 3 things at the grocery store\n1. Milk for the cake\n2. Eggs for breakfast\n3. White bread";
+    return "Hey, can you wait for me at the restaurant at four pm";
   }, [isRecording, isProcessing, hasTranscribed, currentHotkey]);
 
   // Focus text area utility

@@ -18,13 +18,14 @@ const EmailDictationScreen: React.FC<EmailDictationScreenProps> = ({ onNext }) =
   const cleanupFunctionsRef = useRef<(() => void)[]>([]);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Memoized placeholder text with email example - optimized with dynamic user name
+  // Placeholder: single-line sentence that works whether AI post-processing
+  // is on or off. Multi-line email formatting only renders correctly when AI
+  // cleanup runs, which can be disabled or slow on first run.
   const placeholderText = useMemo(() => {
-    const displayName = userName || 'User';
-    if (isRecording) return `Hi John,\n\nI'm looking forward to working with you. Are you available to meet at 3 pm on Friday?\n\nRegards,\n${displayName}`;
+    if (isRecording) return "Hi John, I'm looking forward to working with you. Are you available to meet at 3 pm on Friday?";
     if (isProcessing) return "⚡ Processing...";
     if (hasTranscribed) return "Great! Try speaking again to add more content.";
-    return `Hi John,\n\nI'm looking forward to working with you. Are you available to meet at 3 pm on Friday?\n\nRegards,\n${displayName}`;
+    return "Hi John, I'm looking forward to working with you. Are you available to meet at 3 pm on Friday?";
   }, [isRecording, isProcessing, hasTranscribed, userName]);
 
   // Optimized focus utility with cleanup
