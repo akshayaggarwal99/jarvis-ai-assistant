@@ -224,6 +224,16 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
         setUseLocalModel(true);
       }
 
+      // Anonymous: see Parakeet vs Whisper adoption, see if download
+      // stalls drive abandonment in step 1.
+      if (electronAPI?.posthogCapture) {
+        electronAPI.posthogCapture('onboarding_model_chosen', {
+          model_id: modelId,
+          family: isParakeet ? 'parakeet' : 'whisper',
+          was_downloaded: isDownloaded
+        });
+      }
+
       // Warm the model now so the user's very first dictation isn't a
       // 5–10s cold-load. Fire-and-forget — the user can keep configuring.
       if (electronAPI?.preloadLocalModel) {
@@ -295,6 +305,13 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
         await electronAPI.appUpdateSettings({
           useOllama: choice === 'ollama',
           aiPostProcessing: choice !== 'none'
+        });
+      }
+      // Anonymous: see Skip-rate vs Gemini vs Ollama distribution.
+      if (electronAPI?.posthogCapture) {
+        electronAPI.posthogCapture('onboarding_ai_choice', {
+          choice,
+          has_key: choice === 'gemini' ? !!geminiKey.trim() : choice === 'ollama'
         });
       }
     } catch (error) {

@@ -261,6 +261,7 @@ export class TranscriptionSessionManager {
         threshold: 150,
         timestamp: new Date().toISOString()
       });
+      posthog.capture('dictation_skipped', { reason: 'audio_too_short', duration_ms: duration });
       return null;
     }
 
@@ -273,6 +274,7 @@ export class TranscriptionSessionManager {
         bufferSize: audioBuffer.length,
         timestamp: new Date().toISOString()
       });
+      posthog.capture('dictation_skipped', { reason: 'audio_silent', duration_ms: duration });
       return null;
     }
 

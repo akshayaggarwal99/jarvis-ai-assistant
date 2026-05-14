@@ -138,6 +138,18 @@ const EmailDictationScreen: React.FC<EmailDictationScreenProps> = ({ onNext }) =
     }
   }, [playCue]);
 
+  // Anonymous funnel: log success/failure of the email-tutorial dictation.
+  const logEmailDictationResult = useCallback((text: string) => {
+    const api = (window as any).electronAPI;
+    if (!api?.posthogCapture) return;
+    const hasText = !!(text && text.trim());
+    api.posthogCapture('onboarding_tutorial_dictation', {
+      step_id: 'email-tutorial',
+      success: hasText,
+      word_count: hasText ? text.trim().split(/\s+/).length : 0
+    });
+  }, []);
+
   // Handle transcription state changes - optimized with debug logging and immediate state reset
   const handleTranscriptionStateChange = useCallback((isTranscribing: boolean) => {
     console.log(`[EmailDictation] Transcription state: ${isTranscribing}`);
@@ -152,6 +164,7 @@ const EmailDictationScreen: React.FC<EmailDictationScreenProps> = ({ onNext }) =
   // Handle tutorial transcription results - optimized with proper state reset and debug logging
   const handleTutorialTranscription = useCallback((event: any, transcriptText: string) => {
     console.log(`[EmailDictation] Tutorial transcription received: "${transcriptText}"`);
+    logEmailDictationResult(transcriptText);
     if (transcriptText?.trim() && transcriptText !== lastProcessedTranscriptionRef.current) {
       setTranscriptionText(transcriptText);
       lastProcessedTranscriptionRef.current = transcriptText;
@@ -173,7 +186,7 @@ const EmailDictationScreen: React.FC<EmailDictationScreenProps> = ({ onNext }) =
       setIsRecording(false);
       setIsProcessing(false);
     }
-  }, [focusTextArea]);
+  }, [focusTextArea, logEmailDictationResult]);
 
   // Initialize component once on mount - optimized
   useEffect(() => {

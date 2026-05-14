@@ -139,7 +139,19 @@ const VoiceTranscriptionScreen: React.FC<VoiceTranscriptionScreenProps> = ({ onN
     console.log('🎯 [VoiceTranscription] Event object:', event);
     console.log('🎯 [VoiceTranscription] Current transcription text:', transcriptionText);
     console.log('🎯 [VoiceTranscription] Last processed:', lastProcessedTranscriptionRef.current);
-    
+
+    // Anonymous: log success/failure of the first tutorial dictation so we
+    // can tell "stuck because dictation broke" from "user just navigated away".
+    const api = (window as any).electronAPI;
+    const hasText = !!(transcriptText && transcriptText.trim());
+    if (api?.posthogCapture) {
+      api.posthogCapture('onboarding_tutorial_dictation', {
+        step_id: 'voice-tutorial',
+        success: hasText,
+        word_count: hasText ? transcriptText.trim().split(/\s+/).length : 0
+      });
+    }
+
     if (transcriptText?.trim() && transcriptText !== lastProcessedTranscriptionRef.current) {
       // The backend already formats the text perfectly - just use it directly
       console.log('🎯 [VoiceTranscription] Setting backend-formatted text:', transcriptText);
