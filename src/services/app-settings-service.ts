@@ -40,6 +40,8 @@ interface AppSettings {
   customDictationPrompt?: string;
   customEmailPrompt?: string;
   customAssistantPrompt?: string;
+  // Jarvis 2.0 waitlist banner
+  jarvis2BannerDismissed?: boolean;
 }
 
 /**

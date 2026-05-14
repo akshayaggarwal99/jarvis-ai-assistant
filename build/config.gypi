@@ -425,17 +425,9 @@
     "want_separate_host_toolset": 0,
     "xcode_version": "16.0",
     "nodedir": "/Users/akshayaggarwal/Library/Caches/node-gyp/20.19.2",
-    "python": "/Users/akshayaggarwal/.local/share/mise/installs/python/3.12.12/bin/python3",
+    "python": "/opt/homebrew/opt/python@3.14/bin/python3.14",
     "standalone_static_library": 1,
-    "prefix": "/Users/akshayaggarwal/.nvm/versions/node/v20.19.2",
-    "user_agent": "npm/10.8.2 node/v20.19.2 darwin arm64 workspaces/false",
-    "cache": "/Users/akshayaggarwal/.npm",
-    "node_gyp": "/Users/akshayaggarwal/.nvm/versions/node/v20.19.2/lib/node_modules/npm/node_modules/node-gyp/bin/node-gyp.js",
-    "npm_version": "10.8.2",
-    "userconfig": "/Users/akshayaggarwal/.npmrc",
-    "init_module": "/Users/akshayaggarwal/.npm-init.js",
-    "globalconfig": "/Users/akshayaggarwal/.nvm/versions/node/v20.19.2/etc/npmrc",
     "local_prefix": "/Users/akshayaggarwal/VSCode/jarvis-ai-assistant-test",
-    "global_prefix": "/Users/akshayaggarwal/.nvm/versions/node/v20.19.2"
+    "user_agent": "bun/1.3.4 npm/? node/v24.3.0 darwin arm64"
   }
 }
