@@ -72,15 +72,12 @@ const VoiceTranscriptionScreen: React.FC<VoiceTranscriptionScreenProps> = ({ onN
     });
   }, [ensureAudioCtx]);
 
-  // Placeholder: a simple, single-line sentence that works even without
-  // AI post-processing (which can be off or slow on first run). Avoids
-  // numbered-list samples that depend on AI formatting to look right.
-  const placeholderText = useMemo(() => {
-    if (isRecording) return "Hey can you wait for me at the restaurant at 4pm?";
-    if (isProcessing) return "⚡ Processing...";
-    if (hasTranscribed) return "Great! Try speaking again to add more content.";
-    return "Hey can you wait for me at the restaurant at 4pm?";
-  }, [isRecording, isProcessing, hasTranscribed, currentHotkey]);
+  // Placeholder stays static — the textarea is just the destination for
+  // dictated text, exactly like Notes / Mail / Slack. Recording and
+  // processing status live in the inline waveform overlay, not inside
+  // the text field.
+  const HINT_TEXT = 'Hey can you wait for me at the restaurant at 4pm?';
+  const placeholderText = useMemo(() => HINT_TEXT, []);
 
   // Focus text area utility
   const focusTextArea = useCallback((text: string) => {
@@ -276,27 +273,55 @@ const VoiceTranscriptionScreen: React.FC<VoiceTranscriptionScreenProps> = ({ onN
           }
         `}>
           
-          {/* Live Recording Indicator */}
-          {isRecording && (
-            <div className={`absolute inset-0 ${theme.radius.lg}`}>
-              <div className={`absolute inset-0 bg-blue-400/8 ${theme.radius.lg} animate-pulse`}></div>
-              <div className="absolute top-3 left-4 flex items-center space-x-2 z-20">
-                <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse shadow-sm shadow-red-500/50"></div>
-                <span className="text-red-400 font-medium animate-pulse text-xs">Recording...</span>
-              </div>
+          {/* Inline waveform overlay — replaces the floating waveform
+              window for the tutorial, so the user sees recording/processing
+              feedback right where they're looking. Mirrors the real
+              post-onboarding experience (visual cue on the waveform,
+              text lands in the destination field). */}
+          {(isRecording || isProcessing) && (
+            <div className="absolute top-3 left-4 z-20 flex items-center gap-3 px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-md border border-white/10">
+              {isRecording ? (
+                <>
+                  <div className="flex items-end gap-[3px] h-4">
+                    {[0, 1, 2, 3, 4, 5, 6].map(i => (
+                      <span
+                        key={i}
+                        className="inline-block w-[3px] rounded-sm bg-red-400"
+                        style={{
+                          height: '100%',
+                          animation: `jarvisWave 0.9s ease-in-out ${i * 0.08}s infinite alternate`
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <span className="text-red-300 text-xs font-medium">Listening…</span>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-[3px]">
+                    {[0, 1, 2].map(i => (
+                      <span
+                        key={i}
+                        className="inline-block w-1.5 h-1.5 rounded-full bg-blue-400"
+                        style={{ animation: `jarvisDot 1s ease-in-out ${i * 0.15}s infinite` }}
+                      />
+                    ))}
+                  </div>
+                  <span className="text-blue-300 text-xs font-medium">Transcribing…</span>
+                </>
+              )}
             </div>
           )}
-          
-          {/* Processing Indicator */}
-          {isProcessing && !isRecording && (
-            <div className={`absolute inset-0 ${theme.radius.lg}`}>
-              <div className={`absolute inset-0 bg-blue-400/5 ${theme.radius.lg}`}></div>
-              <div className="absolute top-3 left-4 flex items-center space-x-2">
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
-                <span className="text-blue-400 font-medium text-xs">Processing & Formatting...</span>
-              </div>
-            </div>
-          )}
+          <style>{`
+            @keyframes jarvisWave {
+              0% { transform: scaleY(0.25); }
+              100% { transform: scaleY(1); }
+            }
+            @keyframes jarvisDot {
+              0%, 100% { opacity: 0.3; transform: scale(0.8); }
+              50% { opacity: 1; transform: scale(1.2); }
+            }
+          `}</style>
           
           {/* Microphone Icon */}
           <div className="absolute top-4 right-4 z-10">
