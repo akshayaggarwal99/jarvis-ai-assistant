@@ -52,13 +52,63 @@ const EmailDictationScreen: React.FC<EmailDictationScreenProps> = ({ onNext }) =
   }, []);
 
   // Handle push-to-talk state changes - optimized with debug logging
+  // Inline buduppp/poop cues — same shape as VoiceTranscriptionScreen.
+  // Played from this renderer so they don't depend on the (often hidden)
+  // waveform window's audio context.
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const ensureAudioCtx = useCallback((): AudioContext | null => {
+    try {
+      if (!audioCtxRef.current) {
+        const Ctx: typeof AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
+        audioCtxRef.current = new Ctx();
+      }
+      if (audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume().catch(() => { /* ignore */ });
+      }
+      return audioCtxRef.current;
+    } catch { return null; }
+  }, []);
+  const playCue = useCallback((kind: 'start' | 'stop') => {
+    const ctx = ensureAudioCtx();
+    if (!ctx) return;
+    const tones: Array<[number, number, number]> = kind === 'start'
+      ? [[350, 0, 0.08], [500, 0.05, 0.08], [750, 0.10, 0.10]]
+      : [[600, 0, 0.08], [400, 0.06, 0.10]];
+    tones.forEach(([freq, off, dur]) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + off);
+      gain.gain.setValueAtTime(0.012, ctx.currentTime + off);
+      gain.gain.exponentialRampToValueAtTime(0.005, ctx.currentTime + off + dur);
+      osc.start(ctx.currentTime + off);
+      osc.stop(ctx.currentTime + off + dur);
+    });
+  }, [ensureAudioCtx]);
+
+  // Prime AudioContext on first user gesture (Chromium autoplay policy).
+  useEffect(() => {
+    const prime = () => { ensureAudioCtx(); };
+    document.addEventListener('click', prime, { once: true });
+    document.addEventListener('keydown', prime, { once: true });
+    document.addEventListener('mousemove', prime, { once: true });
+    return () => {
+      document.removeEventListener('click', prime);
+      document.removeEventListener('keydown', prime);
+      document.removeEventListener('mousemove', prime);
+    };
+  }, [ensureAudioCtx]);
+
   const handlePushToTalkStateChange = useCallback((isActive: boolean) => {
     console.log(`[EmailDictation] Push-to-talk state: ${isActive}`);
     setIsRecording(isActive);
-    if (!isActive) {
+    if (isActive) {
+      playCue('start');
+    } else {
+      playCue('stop');
       setIsProcessing(true);
     }
-  }, []); // Removed dependencies to prevent unnecessary re-renders
+  }, [playCue]);
 
   // Handle transcription state changes - optimized with debug logging and immediate state reset
   const handleTranscriptionStateChange = useCallback((isTranscribing: boolean) => {

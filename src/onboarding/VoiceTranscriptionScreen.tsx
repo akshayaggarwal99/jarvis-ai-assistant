@@ -15,6 +15,62 @@ const VoiceTranscriptionScreen: React.FC<VoiceTranscriptionScreenProps> = ({ onN
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const lastProcessedTranscriptionRef = useRef('');
   const cleanupFunctionsRef = useRef<(() => void)[]>([]);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  // Synthesize the same buduppp/poop tones the waveform window plays —
+  // but in THIS renderer's audio context, so it doesn't depend on the
+  // hidden waveform window (which Chromium can audio-suspend).
+  const ensureAudioCtx = useCallback((): AudioContext | null => {
+    try {
+      if (!audioCtxRef.current) {
+        const Ctx: typeof AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
+        audioCtxRef.current = new Ctx();
+      }
+      if (audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume().catch(() => { /* ignore */ });
+      }
+      return audioCtxRef.current;
+    } catch { return null; }
+  }, []);
+
+  const playStartCue = useCallback(() => {
+    const ctx = ensureAudioCtx();
+    if (!ctx) return;
+    const tones: Array<[number, number, number]> = [
+      [350, 0.0, 0.08],   // freq, startOffset, dur
+      [500, 0.05, 0.08],
+      [750, 0.10, 0.10]
+    ];
+    tones.forEach(([freq, off, dur]) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + off);
+      gain.gain.setValueAtTime(0.012, ctx.currentTime + off);
+      gain.gain.exponentialRampToValueAtTime(0.005, ctx.currentTime + off + dur);
+      osc.start(ctx.currentTime + off);
+      osc.stop(ctx.currentTime + off + dur);
+    });
+  }, [ensureAudioCtx]);
+
+  const playStopCue = useCallback(() => {
+    const ctx = ensureAudioCtx();
+    if (!ctx) return;
+    const tones: Array<[number, number, number]> = [
+      [600, 0.0, 0.08],
+      [400, 0.06, 0.10]
+    ];
+    tones.forEach(([freq, off, dur]) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + off);
+      gain.gain.setValueAtTime(0.012, ctx.currentTime + off);
+      gain.gain.exponentialRampToValueAtTime(0.005, ctx.currentTime + off + dur);
+      osc.start(ctx.currentTime + off);
+      osc.stop(ctx.currentTime + off + dur);
+    });
+  }, [ensureAudioCtx]);
 
   // Placeholder: a simple, single-line sentence that works even without
   // AI post-processing (which can be off or slow on first run). Avoids
@@ -40,12 +96,15 @@ const VoiceTranscriptionScreen: React.FC<VoiceTranscriptionScreenProps> = ({ onN
   const handlePushToTalkStateChange = useCallback((isActive: boolean) => {
     console.log('🎯 [VoiceTranscription] Push-to-talk state change:', isActive);
     setIsRecording(isActive);
-    if (!isActive) {
+    if (isActive) {
+      playStartCue();
+    } else {
+      playStopCue();
       // When push-to-talk stops, we might be processing
       console.log('🎯 [VoiceTranscription] Setting processing to true');
       setIsProcessing(true);
     }
-  }, []);
+  }, [playStartCue, playStopCue]);
 
   // Handle transcription state changes
   const handleTranscriptionStateChange = useCallback((isTranscribing: boolean) => {
@@ -87,10 +146,31 @@ const VoiceTranscriptionScreen: React.FC<VoiceTranscriptionScreenProps> = ({ onN
     }
   }, [transcriptionText, focusTextArea]);
 
+  // Prime the AudioContext on first user interaction with the document.
+  // Chromium's autoplay policy keeps AudioContext suspended until a real
+  // user gesture lands; without this, our oscillator-based cues are silent
+  // on the very first Fn-press.
+  useEffect(() => {
+    const prime = () => {
+      ensureAudioCtx();
+      document.removeEventListener('click', prime);
+      document.removeEventListener('keydown', prime);
+      document.removeEventListener('mousemove', prime);
+    };
+    document.addEventListener('click', prime);
+    document.addEventListener('keydown', prime);
+    document.addEventListener('mousemove', prime, { once: true });
+    return () => {
+      document.removeEventListener('click', prime);
+      document.removeEventListener('keydown', prime);
+      document.removeEventListener('mousemove', prime);
+    };
+  }, [ensureAudioCtx]);
+
   // Initialize component once on mount
   useEffect(() => {
     const electronAPI = (window as any).electronAPI;
-    
+
     // Focus text area
     if (textAreaRef.current) {
       textAreaRef.current.focus();
