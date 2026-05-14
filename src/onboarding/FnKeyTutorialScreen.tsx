@@ -19,6 +19,15 @@ const FnKeyTutorialScreen: React.FC<FnKeyTutorialScreenProps> = ({ onNext }) => 
     { label: 'Option Key', value: 'option', description: 'Option key (alternative)' },
   ];
 
+  // Warm the mic capture path so the next step's first Fn-press is instant.
+  // Fire-and-forget; failures don't affect the user experience here.
+  useEffect(() => {
+    const api = (window as any).electronAPI;
+    if (api?.warmMic) {
+      api.warmMic().catch(() => { /* ignore */ });
+    }
+  }, []);
+
   // Load current hotkey setting on component mount
   useEffect(() => {
     const loadCurrentHotkey = async () => {

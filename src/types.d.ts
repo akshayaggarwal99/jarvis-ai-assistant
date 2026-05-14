@@ -9,6 +9,7 @@ interface ElectronAPI {
   preloadLocalModel: () => Promise<{ ok: boolean; family?: string; reason?: string }>;
   showWaveform: () => Promise<boolean>;
   hideWaveform: () => Promise<boolean>;
+  warmMic: () => Promise<boolean>;
   onStatsUpdate: (callback: (stats: any) => void) => void;
   pasteLastTranscription: () => void;
   startDictation: () => void;

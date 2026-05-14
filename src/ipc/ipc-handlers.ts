@@ -140,6 +140,29 @@ export class IPCHandlers {
     // Show or hide the waveform window from the renderer. Used by the
     // onboarding tutorial screens so the user sees the same waveform
     // overlay they'll see in normal use.
+    // Warm the audio capture path (mic permission/device/format) without
+    // committing to a real recording session. Called from earlier
+    // onboarding steps so the first real Fn-press in the voice tutorial
+    // doesn't pay the ~150ms-to-1s first-init tax.
+    safeRegisterHandler('mic:warm', async () => {
+      try {
+        const { NativeAudioRecorder } = await import('../audio/native-audio-recorder');
+        const probe = new NativeAudioRecorder();
+        // Tiny start→stop cycle to seed the AVFoundation capture session.
+        await probe.start(() => { /* no level callback */ });
+        // Stop a beat later so the OS has time to fully spin up the
+        // capture pipeline; without the delay the start is effectively
+        // a no-op on cold boot.
+        await new Promise(r => setTimeout(r, 60));
+        probe.stop();
+        Logger.info('🎤 [Warm] Mic capture path primed');
+        return true;
+      } catch (err) {
+        Logger.debug('[IPC] mic:warm failed (ignored):', err);
+        return false;
+      }
+    });
+
     safeRegisterHandler('waveform:show', async () => {
       try {
         const win = this.windowManager.getWindow('waveform');

@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   preloadLocalModel: () => ipcRenderer.invoke('model:preload'),
   showWaveform: () => ipcRenderer.invoke('waveform:show'),
   hideWaveform: () => ipcRenderer.invoke('waveform:hide'),
+  warmMic: () => ipcRenderer.invoke('mic:warm'),
   onStatsUpdate: (callback: (stats: any) => void) => {
     console.log('📊 [Preload] Setting up onStatsUpdate listener');
     const listener = (_event: any, stats: any) => {
