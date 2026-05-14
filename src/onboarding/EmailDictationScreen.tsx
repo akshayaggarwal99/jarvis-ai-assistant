@@ -64,22 +64,54 @@ const EmailDictationScreen: React.FC<EmailDictationScreenProps> = ({ onNext }) =
       return audioCtxRef.current;
     } catch { return null; }
   }, []);
+  // 1:1 port of waveform.html's playStartSound / playStopSound. Don't
+  // tweak frequencies or gains in isolation — they're the canonical
+  // Jarvis voice cue and must match the floating-window synth.
   const playCue = useCallback((kind: 'start' | 'stop') => {
     const ctx = ensureAudioCtx();
     if (!ctx) return;
-    const tones: Array<[number, number, number]> = kind === 'start'
-      ? [[350, 0, 0.08], [500, 0.05, 0.08], [750, 0.10, 0.10]]
-      : [[600, 0, 0.08], [400, 0.06, 0.10]];
-    tones.forEach(([freq, off, dur]) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.frequency.setValueAtTime(freq, ctx.currentTime + off);
-      gain.gain.setValueAtTime(0.012, ctx.currentTime + off);
-      gain.gain.exponentialRampToValueAtTime(0.005, ctx.currentTime + off + dur);
-      osc.start(ctx.currentTime + off);
-      osc.stop(ctx.currentTime + off + dur);
-    });
+    const t0 = ctx.currentTime;
+
+    if (kind === 'start') {
+      // Tone 1: "bu" — 350Hz flat
+      const o1 = ctx.createOscillator(); const g1 = ctx.createGain();
+      o1.connect(g1); g1.connect(ctx.destination);
+      o1.frequency.setValueAtTime(350, t0);
+      g1.gain.setValueAtTime(0.01, t0);
+      g1.gain.exponentialRampToValueAtTime(0.005, t0 + 0.08);
+      o1.start(t0); o1.stop(t0 + 0.08);
+      // Tone 2: "du" — 500Hz flat
+      const o2 = ctx.createOscillator(); const g2 = ctx.createGain();
+      o2.connect(g2); g2.connect(ctx.destination);
+      o2.frequency.setValueAtTime(500, t0 + 0.05);
+      g2.gain.setValueAtTime(0.008, t0 + 0.05);
+      g2.gain.exponentialRampToValueAtTime(0.005, t0 + 0.13);
+      o2.start(t0 + 0.05); o2.stop(t0 + 0.13);
+      // Tone 3: "ppp" — 750Hz flat
+      const o3 = ctx.createOscillator(); const g3 = ctx.createGain();
+      o3.connect(g3); g3.connect(ctx.destination);
+      o3.frequency.setValueAtTime(750, t0 + 0.10);
+      g3.gain.setValueAtTime(0.006, t0 + 0.10);
+      g3.gain.exponentialRampToValueAtTime(0.005, t0 + 0.20);
+      o3.start(t0 + 0.10); o3.stop(t0 + 0.20);
+    } else {
+      // Tone 1: "po" — 600 → 400 Hz ramp
+      const o1 = ctx.createOscillator(); const g1 = ctx.createGain();
+      o1.connect(g1); g1.connect(ctx.destination);
+      o1.frequency.setValueAtTime(600, t0);
+      o1.frequency.exponentialRampToValueAtTime(400, t0 + 0.1);
+      g1.gain.setValueAtTime(0.008, t0);
+      g1.gain.exponentialRampToValueAtTime(0.005, t0 + 0.15);
+      o1.start(t0); o1.stop(t0 + 0.15);
+      // Tone 2: "op" — 350 → 250 Hz ramp
+      const o2 = ctx.createOscillator(); const g2 = ctx.createGain();
+      o2.connect(g2); g2.connect(ctx.destination);
+      o2.frequency.setValueAtTime(350, t0 + 0.08);
+      o2.frequency.exponentialRampToValueAtTime(250, t0 + 0.2);
+      g2.gain.setValueAtTime(0.006, t0 + 0.08);
+      g2.gain.exponentialRampToValueAtTime(0.005, t0 + 0.25);
+      o2.start(t0 + 0.08); o2.stop(t0 + 0.25);
+    }
   }, [ensureAudioCtx]);
 
   // Prime AudioContext on first user gesture (Chromium autoplay policy).

@@ -33,43 +33,63 @@ const VoiceTranscriptionScreen: React.FC<VoiceTranscriptionScreenProps> = ({ onN
     } catch { return null; }
   }, []);
 
+  // The buduppp / poop tones below are a 1:1 port of the original
+  // playStartSound / playStopSound in waveform.html. Don't tweak the
+  // frequencies or gains here without updating waveform.html too —
+  // they're the canonical Jarvis voice cue.
+
   const playStartCue = useCallback(() => {
     const ctx = ensureAudioCtx();
     if (!ctx) return;
-    const tones: Array<[number, number, number]> = [
-      [350, 0.0, 0.08],   // freq, startOffset, dur
-      [500, 0.05, 0.08],
-      [750, 0.10, 0.10]
-    ];
-    tones.forEach(([freq, off, dur]) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.frequency.setValueAtTime(freq, ctx.currentTime + off);
-      gain.gain.setValueAtTime(0.012, ctx.currentTime + off);
-      gain.gain.exponentialRampToValueAtTime(0.005, ctx.currentTime + off + dur);
-      osc.start(ctx.currentTime + off);
-      osc.stop(ctx.currentTime + off + dur);
-    });
+    const t0 = ctx.currentTime;
+
+    // Tone 1: "bu" — flat 350Hz, 0s → 0.08s
+    const osc1 = ctx.createOscillator(); const g1 = ctx.createGain();
+    osc1.connect(g1); g1.connect(ctx.destination);
+    osc1.frequency.setValueAtTime(350, t0);
+    g1.gain.setValueAtTime(0.01, t0);
+    g1.gain.exponentialRampToValueAtTime(0.005, t0 + 0.08);
+    osc1.start(t0); osc1.stop(t0 + 0.08);
+
+    // Tone 2: "du" — flat 500Hz, 0.05s → 0.13s
+    const osc2 = ctx.createOscillator(); const g2 = ctx.createGain();
+    osc2.connect(g2); g2.connect(ctx.destination);
+    osc2.frequency.setValueAtTime(500, t0 + 0.05);
+    g2.gain.setValueAtTime(0.008, t0 + 0.05);
+    g2.gain.exponentialRampToValueAtTime(0.005, t0 + 0.13);
+    osc2.start(t0 + 0.05); osc2.stop(t0 + 0.13);
+
+    // Tone 3: "ppp" — flat 750Hz, 0.10s → 0.20s
+    const osc3 = ctx.createOscillator(); const g3 = ctx.createGain();
+    osc3.connect(g3); g3.connect(ctx.destination);
+    osc3.frequency.setValueAtTime(750, t0 + 0.10);
+    g3.gain.setValueAtTime(0.006, t0 + 0.10);
+    g3.gain.exponentialRampToValueAtTime(0.005, t0 + 0.20);
+    osc3.start(t0 + 0.10); osc3.stop(t0 + 0.20);
   }, [ensureAudioCtx]);
 
   const playStopCue = useCallback(() => {
     const ctx = ensureAudioCtx();
     if (!ctx) return;
-    const tones: Array<[number, number, number]> = [
-      [600, 0.0, 0.08],
-      [400, 0.06, 0.10]
-    ];
-    tones.forEach(([freq, off, dur]) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.frequency.setValueAtTime(freq, ctx.currentTime + off);
-      gain.gain.setValueAtTime(0.012, ctx.currentTime + off);
-      gain.gain.exponentialRampToValueAtTime(0.005, ctx.currentTime + off + dur);
-      osc.start(ctx.currentTime + off);
-      osc.stop(ctx.currentTime + off + dur);
-    });
+    const t0 = ctx.currentTime;
+
+    // Tone 1: "po" — ramp 600Hz → 400Hz, 0s → 0.15s
+    const osc1 = ctx.createOscillator(); const g1 = ctx.createGain();
+    osc1.connect(g1); g1.connect(ctx.destination);
+    osc1.frequency.setValueAtTime(600, t0);
+    osc1.frequency.exponentialRampToValueAtTime(400, t0 + 0.1);
+    g1.gain.setValueAtTime(0.008, t0);
+    g1.gain.exponentialRampToValueAtTime(0.005, t0 + 0.15);
+    osc1.start(t0); osc1.stop(t0 + 0.15);
+
+    // Tone 2: "op" — ramp 350Hz → 250Hz, 0.08s → 0.25s
+    const osc2 = ctx.createOscillator(); const g2 = ctx.createGain();
+    osc2.connect(g2); g2.connect(ctx.destination);
+    osc2.frequency.setValueAtTime(350, t0 + 0.08);
+    osc2.frequency.exponentialRampToValueAtTime(250, t0 + 0.2);
+    g2.gain.setValueAtTime(0.006, t0 + 0.08);
+    g2.gain.exponentialRampToValueAtTime(0.005, t0 + 0.25);
+    osc2.start(t0 + 0.08); osc2.stop(t0 + 0.25);
   }, [ensureAudioCtx]);
 
   // Placeholder stays static — the textarea is just the destination for
