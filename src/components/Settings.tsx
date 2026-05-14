@@ -37,6 +37,7 @@ const Settings: React.FC = () => {
   const [hotkey, setHotkey] = useState('fn');
   const [audioFeedback, setAudioFeedback] = useState(false);
   const [showOnStartup, setShowOnStartup] = useState(false);
+  const [analyticsEnabled, setAnalyticsEnabled] = useState(true);
   const [aiPostProcessing, setAiPostProcessing] = useState(true);
   const [useLocalModel, setUseLocalModel] = useState(false);
   const [localModelId, setLocalModelId] = useState('tiny.en');
@@ -241,6 +242,7 @@ const Settings: React.FC = () => {
           setHotkey(appSettings.hotkey);
           setAudioFeedback(appSettings.audioFeedback);
           setShowOnStartup(appSettings.showOnStartup);
+          setAnalyticsEnabled(appSettings.analytics !== false);
           setAiPostProcessing(appSettings.aiPostProcessing);
           setAiPostProcessing(appSettings.aiPostProcessing);
           setUseLocalModel(appSettings.useLocalModel ?? false);
@@ -398,6 +400,23 @@ const Settings: React.FC = () => {
       }
     } catch (error) {
       console.error('Failed to update audio feedback settings:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleAnalyticsToggle = async () => {
+    try {
+      setIsSaving(true);
+      const newValue = !analyticsEnabled;
+      const electronAPI = (window as any).electronAPI;
+
+      if (electronAPI && electronAPI.appUpdateSettings) {
+        await electronAPI.appUpdateSettings({ analytics: newValue });
+        setAnalyticsEnabled(newValue);
+      }
+    } catch (error) {
+      console.error('Failed to update analytics setting:', error);
     } finally {
       setIsSaving(false);
     }
@@ -1854,6 +1873,17 @@ const Settings: React.FC = () => {
               <p className={`text-sm ${theme.text.tertiary}`}>Display helpful voice reminders while typing</p>
             </div>
             <Toggle enabled={showNudges} onToggle={handleNudgeToggle} disabled={isSaving} />
+          </div>
+
+          {/* Send Anonymous Analytics */}
+          <div className="flex items-center justify-between">
+            <div className="pr-6">
+              <h4 className={`font-medium ${theme.text.primary} mb-1`}>Send Anonymous Analytics</h4>
+              <p className={`text-sm ${theme.text.tertiary}`}>
+                Helps us improve Jarvis by sending coarse usage counts (word count, audio length, model). Never sends transcript text, personal info, or anything that could identify you.
+              </p>
+            </div>
+            <Toggle enabled={analyticsEnabled} onToggle={handleAnalyticsToggle} disabled={isSaving} />
           </div>
         </div>
       </div>

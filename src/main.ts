@@ -1625,6 +1625,17 @@ app.whenReady().then(async () => {
 
   Logger.info('🚀 [Startup] Jarvis starting up');
 
+  // Anonymous launch pulse. First-launch is inferred from whether we've
+  // previously written the random distinct_id file in userData — no PII.
+  try {
+    const { posthog } = await import('./analytics/posthog');
+    const distinctIdPath = path.join(app.getPath('userData'), 'posthog-distinct-id');
+    const isFirstLaunch = !fs.existsSync(distinctIdPath);
+    posthog.capture('app_launched', { first_launch: isFirstLaunch });
+  } catch (e) {
+    Logger.debug('app_launched pulse skipped:', e);
+  }
+
   // Initialize Power Management Service FIRST to prevent system hanging
   const powerManager = PowerManagementService.getInstance();
   powerManager.registerService('app-lifecycle');

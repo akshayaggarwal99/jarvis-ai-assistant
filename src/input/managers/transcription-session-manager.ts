@@ -2,8 +2,23 @@ import { Logger } from '../../core/logger';
 import { FastAssistantTranscriber } from '../../transcription/fast-assistant-transcriber';
 import { AppSettingsService } from '../../services/app-settings-service';
 import { OptimizedAnalyticsManager } from '../../analytics/optimized-analytics-manager';
+import { posthog } from '../../analytics/posthog';
 import { AudioValidator } from '../../audio/audio-validator';
 import { TranscriptionResult, StreamingControl, AudioSessionData } from '../types/push-to-talk-types';
+
+// Coarse error category — never carries any text from the error message,
+// which can contain transcripts, file paths, or other private data.
+function classifyTranscriptionError(err: unknown): string {
+  if (!err) return 'unknown';
+  const msg = String((err as any)?.message || err).toLowerCase();
+  if (msg.includes('timeout') || msg.includes('etimedout')) return 'timeout';
+  if (msg.includes('network') || msg.includes('econnrefused') || msg.includes('enotfound')) return 'network';
+  if (msg.includes('rate limit') || msg.includes('429')) return 'rate_limited';
+  if (msg.includes('401') || msg.includes('403') || msg.includes('unauthorized')) return 'auth';
+  if (msg.includes('model') && msg.includes('not')) return 'model_missing';
+  if (msg.includes('audio') && (msg.includes('short') || msg.includes('silent'))) return 'audio_invalid';
+  return 'other';
+}
 
 export class TranscriptionSessionManager {
   private transcriber: FastAssistantTranscriber;
@@ -201,6 +216,10 @@ export class TranscriptionSessionManager {
 
     } catch (error) {
       Logger.error('🌊 [Transcription] Error in streaming transcription:', error);
+      posthog.capture('transcription_failed', {
+        path: 'streaming',
+        error_type: classifyTranscriptionError(error)
+      });
       return null;
     } finally {
       // Always clean up streaming resources
@@ -295,6 +314,12 @@ export class TranscriptionSessionManager {
     } catch (error) {
       const transcriptionTime = Date.now() - transcriptionStartTime;
       Logger.error(`❌ [Transcription] Failed in ${transcriptionTime}ms:`, error);
+
+      posthog.capture('transcription_failed', {
+        path: 'traditional',
+        error_type: classifyTranscriptionError(error),
+        audio_duration_ms: duration
+      });
 
       // Track error
       this.analyticsManager.trackError('transcription_failed', {
