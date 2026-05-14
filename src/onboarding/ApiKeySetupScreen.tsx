@@ -219,8 +219,15 @@ const ApiKeySetupScreen: React.FC<ApiKeySetupScreenProps> = ({ onNext, onApiKeys
 
       // Persist using the modern field names the app actually reads.
       if (electronAPI?.appUpdateSettings) {
-        await electronAPI.appUpdateSettings({ localModelId: modelId });
+        await electronAPI.appUpdateSettings({ localModelId: modelId, useLocalModel: true });
         setLocalModelId(modelId);
+        setUseLocalModel(true);
+      }
+
+      // Warm the model now so the user's very first dictation isn't a
+      // 5–10s cold-load. Fire-and-forget — the user can keep configuring.
+      if (electronAPI?.preloadLocalModel) {
+        electronAPI.preloadLocalModel().catch(() => { /* ignore */ });
       }
     } catch (error) {
       console.error('Failed to change local model:', error);

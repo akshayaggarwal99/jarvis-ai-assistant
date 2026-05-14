@@ -1702,41 +1702,38 @@ app.whenReady().then(async () => {
   // Create menu bar tray
   createMenuBarTray();
 
-  // EARLY WHISPER PRELOAD: Start loading the Metal library and model ASAP
-  // This runs in background so first transcription is fast
+  // EARLY LOCAL-MODEL PRELOAD: warm whichever local model is configured so
+  // the first dictation doesn't pay the 600MB ONNX load cost. Routes based
+  // on the modern useLocalModel + localModelId fields. If those aren't set
+  // yet (fresh install pre-onboarding), this no-ops — the onboarding flow
+  // triggers preload again as soon as the user picks a model.
   (async () => {
     try {
-      const whisperSettings = AppSettingsService.getInstance().getSettings();
-      if (whisperSettings.useLocalWhisper && whisperSettings.localWhisperModel) {
-        Logger.info('🎤 [Startup] Early preload: Starting whisper model warmup...');
+      const settings = AppSettingsService.getInstance().getSettings();
+      if (!settings.useLocalModel || !settings.localModelId) {
+        Logger.info('🎤 [Startup] Early preload: local model not configured, skipping');
+        return;
+      }
+
+      const modelId = settings.localModelId;
+      const { PARAKEET_MODELS } = await import('./transcription/sherpa-models');
+      const isParakeet = PARAKEET_MODELS.some(m => m.id === modelId);
+
+      if (isParakeet) {
+        const { SherpaOnnxTranscriber } = await import('./transcription/sherpa-onnx-transcriber');
+        Logger.info(`🦜 [Startup] Early preload: warming Parakeet model ${modelId}...`);
+        const ok = await SherpaOnnxTranscriber.getInstance().preloadModel();
+        if (ok) Logger.success(`🦜 [Startup] Parakeet model ready`);
+        else Logger.info('🦜 [Startup] Parakeet preload skipped (model not downloaded)');
+      } else {
+        Logger.info(`🎤 [Startup] Early preload: warming Whisper model ${modelId}...`);
         const whisperTranscriber = new LocalWhisperTranscriber();
-        const success = await whisperTranscriber.preloadModel(whisperSettings.localWhisperModel);
-        if (success) {
-          Logger.success(`🎤 [Startup] Early preload: Whisper model '${whisperSettings.localWhisperModel}' ready!`);
-        } else {
-          Logger.info('🎤 [Startup] Early preload: Model not downloaded, skipping');
-        }
+        const ok = await whisperTranscriber.preloadModel(modelId);
+        if (ok) Logger.success(`🎤 [Startup] Whisper model '${modelId}' ready`);
+        else Logger.info('🎤 [Startup] Whisper preload skipped (model not downloaded)');
       }
     } catch (e) {
       Logger.error('🎤 [Startup] Early preload failed:', e);
-    }
-
-    // Also preload Sherpa-ONNX (Parakeet) model if configured
-    try {
-      const settings = AppSettingsService.getInstance().getSettings();
-      if (settings.useLocalModel && settings.localModelId) {
-        const { SherpaOnnxTranscriber } = await import('./transcription/sherpa-onnx-transcriber');
-        Logger.info('🦜 [Startup] Early preload: Starting Sherpa-ONNX model warmup...');
-        const sherpaTranscriber = SherpaOnnxTranscriber.getInstance();
-        const success = await sherpaTranscriber.preloadModel();
-        if (success) {
-          Logger.success(`🦜 [Startup] Early preload: Sherpa-ONNX model ready!`);
-        } else {
-          Logger.info('🦜 [Startup] Early preload: Sherpa-ONNX skipped (not a Parakeet model or not downloaded)');
-        }
-      }
-    } catch (e) {
-      Logger.error('🦜 [Startup] Early preload failed:', e);
     }
   })();
 

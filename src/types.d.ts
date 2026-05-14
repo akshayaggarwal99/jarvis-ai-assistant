@@ -6,6 +6,7 @@ interface ElectronAPI {
   getStats: () => Promise<any>;
   dictationRecent: (limit?: number) => Promise<{ sessions: any[]; stats: any | null }>;
   posthogCapture: (event: string, properties?: Record<string, any>) => Promise<boolean>;
+  preloadLocalModel: () => Promise<{ ok: boolean; family?: string; reason?: string }>;
   onStatsUpdate: (callback: (stats: any) => void) => void;
   pasteLastTranscription: () => void;
   startDictation: () => void;

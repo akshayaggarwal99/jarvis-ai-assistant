@@ -136,6 +136,33 @@ export class IPCHandlers {
         return false;
       }
     });
+
+    // Warm the configured local transcription model from the renderer.
+    // Called right after the user picks/downloads a model in onboarding or
+    // Settings so the first dictation doesn't pay the cold-load tax.
+    safeRegisterHandler('model:preload', async () => {
+      try {
+        const { AppSettingsService } = await import('../services/app-settings-service');
+        const settings = AppSettingsService.getInstance().getSettings();
+        if (!settings.useLocalModel || !settings.localModelId) return { ok: false, reason: 'not_configured' };
+
+        const { PARAKEET_MODELS } = await import('../transcription/sherpa-models');
+        const isParakeet = PARAKEET_MODELS.some(m => m.id === settings.localModelId);
+
+        if (isParakeet) {
+          const { SherpaOnnxTranscriber } = await import('../transcription/sherpa-onnx-transcriber');
+          const ok = await SherpaOnnxTranscriber.getInstance().preloadModel();
+          return { ok, family: 'parakeet' };
+        } else {
+          const { LocalWhisperTranscriber } = await import('../transcription/local-whisper-transcriber');
+          const ok = await new LocalWhisperTranscriber().preloadModel(settings.localModelId);
+          return { ok, family: 'whisper' };
+        }
+      } catch (err) {
+        Logger.error('[IPC] model:preload failed:', err);
+        return { ok: false, reason: 'error' };
+      }
+    });
   }
   
   private registerDictionaryHandlers(): void {

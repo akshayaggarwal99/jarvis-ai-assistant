@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dictationRecent: (limit?: number) => ipcRenderer.invoke('dictation:recent', limit),
   posthogCapture: (event: string, properties?: Record<string, any>) =>
     ipcRenderer.invoke('posthog:capture', event, properties),
+  preloadLocalModel: () => ipcRenderer.invoke('model:preload'),
   onStatsUpdate: (callback: (stats: any) => void) => {
     console.log('📊 [Preload] Setting up onStatsUpdate listener');
     const listener = (_event: any, stats: any) => {
