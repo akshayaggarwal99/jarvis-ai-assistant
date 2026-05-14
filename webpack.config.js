@@ -333,7 +333,15 @@ module.exports = [
         }
       ]
     },
-    plugins: [new CopyAssetsPlugin()],
+    plugins: [
+      new CopyAssetsPlugin(),
+      new (require('webpack').DefinePlugin)({
+        // Baked in by scripts/notarization/1-build-dmg.sh when the
+        // gitignored .env.posthog is present. Empty string in OSS builds
+        // → src/analytics/posthog.ts is a no-op.
+        'process.env.POSTHOG_API_KEY': JSON.stringify(process.env.POSTHOG_API_KEY || '')
+      })
+    ],
     externals: {
       'fn_key_monitor': 'commonjs ./fn_key_monitor.node',
       'typing_monitor': 'commonjs ./typing_monitor.node',
