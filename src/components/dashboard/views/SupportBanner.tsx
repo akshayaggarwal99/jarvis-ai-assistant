@@ -41,6 +41,7 @@ export const SupportBanner: React.FC<{ stats: BannerStats | null }> = ({ stats }
   const [eligible, setEligible] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [shownLogged, setShownLogged] = useState(false);
+  const [thanksMode, setThanksMode] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -104,8 +105,9 @@ export const SupportBanner: React.FC<{ stats: BannerStats | null }> = ({ stats }
   const handleAlreadyDid = async () => {
     const api = (window as any).electronAPI;
     if (api?.posthogCapture) api.posthogCapture('support_banner_already_did', {});
-    setDismissed(true);
+    setThanksMode(true);
     await persistDismiss();
+    setTimeout(() => setDismissed(true), 2200);
   };
 
   const handleDismiss = async () => {
@@ -116,6 +118,25 @@ export const SupportBanner: React.FC<{ stats: BannerStats | null }> = ({ stats }
   };
 
   const saved = hoursSaved(stats?.estimatedTimeSavedMs);
+
+  if (thanksMode) {
+    return (
+      <div className={`relative ${theme.glass.primary} ${theme.radius.xl} p-5 mb-6 border border-white/10 overflow-hidden`}>
+        <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/[0.08] via-transparent to-rose-500/[0.06] pointer-events-none" />
+        <div className="relative flex items-center gap-4">
+          <div className="shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-white/20 to-white/10 flex items-center justify-center border border-white/20 backdrop-blur-sm">
+            <span className="text-lg">❤️</span>
+          </div>
+          <div className="flex-1">
+            <h3 className={`text-base font-medium ${theme.text.primary} mb-0.5`}>Thank you</h3>
+            <p className={`text-sm ${theme.text.tertiary}`}>
+              Means a lot. Seriously — keep dictating. — Akshay
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`relative ${theme.glass.primary} ${theme.radius.xl} p-5 mb-6 border border-white/10 overflow-hidden`}>
