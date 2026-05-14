@@ -5,7 +5,14 @@ All notable changes to Jarvis AI Assistant will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.12] - 2026-05-15
+## [1.2.0] - 2026-05-15
+
+### Added
+- **Dictation tab**: New view on the dashboard showing lifetime time saved, week-over-week hours, day streak, words dictated, and a paginated list of recent transcripts with copy + expand. All local — reads from the same on-device store the app has always written to.
+- **Anonymous usage pulse**: Bound the existing Settings → Privacy "analytics" toggle (on by default) to a real backend so the project can be improved with data on actual usage. No transcription text, no personal data — only coarse counts (word count, audio length, model name). Users can turn it off in Settings. Open-source builds are no-ops by default.
+
+### Removed
+- **Analytics tab**: Replaced by the new Dictation tab, which covers the same headline stats plus the session history the old Analytics tab was missing.
 
 ### Fixed
 - **Parakeet/Sherpa-ONNX local transcription**: Long utterances no longer freeze the app and dictation no longer silently stops after a long session.
