@@ -58,19 +58,15 @@ export class AudioRecordingManager {
     try {
       Logger.info('🚀 [IMMEDIATE] Starting audio recording for instant responsiveness...');
       
-      // ⚡ PARALLEL EXECUTION - Start audio and sound feedback simultaneously
-      const audioPromise = this.audioRecorder.start(onAudioLevel);
-      const soundPromise = this.audioFeedback ? this.playStartSound() : Promise.resolve();
-      
-      // Wait for audio to start (sound can continue in background)
-      await audioPromise;
-      
+      // Start audio capture. Start/stop sound feedback is owned by the
+      // waveform window's synthesized "buduppp" via Web Audio (see
+      // waveform.html). The previous afplay-Hero.aiff path was a duplicate
+      // that only fired when Jarvis had a focused window (i.e. during
+      // onboarding) — which made the tutorial sound different from
+      // normal-use feedback. Removed.
+      await this.audioRecorder.start(onAudioLevel);
+
       Logger.debug('✅ Audio recording started successfully');
-      
-      // Let sound finish in background
-      soundPromise.catch(error => {
-        Logger.debug('⚠️ Start sound failed (non-critical):', error);
-      });
       
     } catch (error) {
       Logger.error('❌ Failed to start audio recording:', error);
@@ -137,25 +133,6 @@ export class AudioRecordingManager {
    */
   getRecorder(): FastAudioRecorder | NativeAudioRecorder {
     return this.audioRecorder;
-  }
-
-  /**
-   * Play start sound feedback
-   */
-  private async playStartSound(): Promise<void> {
-    try {
-      const { BrowserWindow } = await import('electron');
-      const focusedWindow = BrowserWindow.getFocusedWindow();
-      if (focusedWindow) {
-        await focusedWindow.webContents.executeJavaScript(`
-          if (window.electronAPI && window.electronAPI.playSound) {
-            window.electronAPI.playSound('key-press').catch(e => console.error('Failed to play start sound:', e));
-          }
-        `);
-      }
-    } catch (error) {
-      Logger.debug('Failed to play start sound:', error);
-    }
   }
 
   /**

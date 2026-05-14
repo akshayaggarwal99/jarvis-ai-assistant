@@ -85,10 +85,10 @@ export class AudioSessionManager {
         throw new Error('Failed to start any audio recording method');
       }
 
-      // Play audio feedback if enabled
-      if (this.audioFeedbackEnabled) {
-        await this.playAudioFeedback('key-press');
-      }
+      // Start/stop sound feedback is owned by the waveform window's
+      // synthesized Web Audio path. The afplay duplicate that used to live
+      // here only fired when Jarvis had a focused window, which made
+      // onboarding sound different from normal use.
 
       Logger.info(`ℹ️ ✅ [Audio] Recording started using ${usedNative ? 'native' : 'FFmpeg'} recorder`);
 
@@ -227,25 +227,6 @@ export class AudioSessionManager {
     Logger.debug(`🔇 [Audio] Silence detection - RMS: ${normalizedRMS.toFixed(2)} (>${rmsThreshold}), Peak: ${normalizedPeak.toFixed(2)} (>${peakThreshold}), Duration: ${durationMs}ms, Significant: ${hasSignificantAudio}`);
     
     return hasSignificantAudio;
-  }
-
-  /**
-   * Play audio feedback sound
-   */
-  private async playAudioFeedback(soundType: 'key-press' | 'key-release'): Promise<void> {
-    try {
-      const { BrowserWindow } = await import('electron');
-      const focusedWindow = BrowserWindow.getFocusedWindow();
-      if (focusedWindow) {
-        await focusedWindow.webContents.executeJavaScript(`
-          if (window.electronAPI && window.electronAPI.playSound) {
-            window.electronAPI.playSound('${soundType}').catch(e => console.error('Failed to play ${soundType} sound:', e));
-          }
-        `);
-      }
-    } catch (error) {
-      Logger.debug(`Failed to play ${soundType} sound:`, error);
-    }
   }
 
   /**
