@@ -119,11 +119,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ stats, currentHotk
           <h3 className="text-lg font-medium text-white mb-4">Quick Actions</h3>
           <div className="grid grid-cols-2 gap-4">
             <button
-              onClick={() => onNavigate('analytics')}
+              onClick={() => onNavigate('dictation')}
               className={`${theme.button.outline} p-4 text-left ${theme.radius.xl} group`}
             >
-              <div className="text-white font-medium text-sm mb-1">View Analytics</div>
-              <div className="text-white/60 text-xs">Detailed insights</div>
+              <div className="text-white font-medium text-sm mb-1">Dictation History</div>
+              <div className="text-white/60 text-xs">Stats & past sessions</div>
             </button>
             <button
               onClick={() => onNavigate('dictionary')}

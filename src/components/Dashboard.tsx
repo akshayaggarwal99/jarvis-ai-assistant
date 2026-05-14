@@ -4,7 +4,7 @@ import Settings from './Settings';
 import { UpdateNotification, UpdateProgress, UpdateReady } from './UpdateComponents';
 import { SuccessModal } from './SuccessModal';
 import { theme, themeComponents } from '../styles/theme';
-import { DashboardView, DictionaryView, AnalyticsView, DictationView, HelpView } from './dashboard/views';
+import { DashboardView, DictionaryView, DictationView, HelpView } from './dashboard/views';
 
 interface UserStats {
   totalSessions: number;
@@ -36,7 +36,7 @@ interface DictionaryEntry {
   usageCount?: number;
 }
 
-type ViewType = 'dashboard' | 'analytics' | 'dictation' | 'dictionary' | 'settings' | 'help';
+type ViewType = 'dashboard' | 'dictation' | 'dictionary' | 'settings' | 'help';
 
 // Helper function to get hotkey display label
 const getHotkeyLabel = (key: string): string => {
@@ -466,16 +466,6 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
               <span className="text-sm font-medium">Dashboard</span>
             </button>
             <button
-              onClick={() => setCurrentView('analytics')}
-              className={`group w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 text-left ${currentView === 'analytics'
-                  ? 'text-white bg-white/25 backdrop-blur-xl shadow-lg border border-white/20'
-                  : 'text-white/80 hover:text-white hover:bg-white/15 hover:backdrop-blur-lg hover:border hover:border-white/10'
-                }`}
-            >
-              <span className="material-icons-outlined text-[18px] group-hover:scale-110 transition-transform duration-200">analytics</span>
-              <span className="text-sm font-medium">Analytics</span>
-            </button>
-            <button
               onClick={() => setCurrentView('dictation')}
               className={`group w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 text-left ${currentView === 'dictation'
                   ? 'text-white bg-white/25 backdrop-blur-xl shadow-lg border border-white/20'
@@ -582,8 +572,6 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
               onRemoveEntry={removeDictionaryEntry}
             />
           )}
-
-          {currentView === 'analytics' && <AnalyticsView stats={stats} />}
 
           {currentView === 'dictation' && <DictationView />}
 
