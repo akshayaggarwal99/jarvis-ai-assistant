@@ -427,7 +427,36 @@ const OnboardingFlow: React.FC<{ onComplete: () => void }> = ({ onComplete }) =>
     { id: 'tour', component: FeatureTourScreen },
   ];
 
+  // Anonymous funnel: started on first mount, step_viewed on each
+  // currentStep change, completed when the final Get-Started fires.
+  // No PII, just step_id + step_index. Honors Settings.analytics toggle
+  // on the main process side.
+  const onboardingStartFiredRef = React.useRef(false);
+  useEffect(() => {
+    const api = (window as any).electronAPI;
+    if (!api?.posthogCapture) return;
+    if (!onboardingStartFiredRef.current) {
+      onboardingStartFiredRef.current = true;
+      api.posthogCapture('onboarding_started', { total_steps: steps.length });
+    }
+    const step = steps[currentStep];
+    if (step) {
+      api.posthogCapture('onboarding_step_viewed', {
+        step_id: step.id,
+        step_index: currentStep
+      });
+    }
+  }, [currentStep]);
+
   const nextStep = () => {
+    const api = (window as any).electronAPI;
+    const current = steps[currentStep];
+    if (api?.posthogCapture && current) {
+      api.posthogCapture('onboarding_step_completed', {
+        step_id: current.id,
+        step_index: currentStep
+      });
+    }
     if (currentStep < steps.length - 1) {
       setIsTransitioning(true);
       setTimeout(() => {
@@ -435,6 +464,9 @@ const OnboardingFlow: React.FC<{ onComplete: () => void }> = ({ onComplete }) =>
         setIsTransitioning(false);
       }, 150);
     } else {
+      if (api?.posthogCapture) {
+        api.posthogCapture('onboarding_completed', { total_steps: steps.length });
+      }
       onComplete();
     }
   };

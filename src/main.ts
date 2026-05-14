@@ -1625,12 +1625,22 @@ app.whenReady().then(async () => {
 
   Logger.info('🚀 [Startup] Jarvis starting up');
 
-  // Anonymous launch pulse. First-launch is inferred from whether we've
-  // previously written the random distinct_id file in userData — no PII.
+  // Anonymous launch pulse. first_launch = true only when BOTH our
+  // distinct_id file is absent AND there are no prior local sessions.
+  // The second check prevents 1.1.x → 1.2.0 upgraders from being
+  // mis-cohorted as fresh installs on their first 1.2.0 launch.
   try {
     const { posthog } = await import('./analytics/posthog');
     const distinctIdPath = path.join(app.getPath('userData'), 'posthog-distinct-id');
-    const isFirstLaunch = !fs.existsSync(distinctIdPath);
+    const distinctIdAbsent = !fs.existsSync(distinctIdPath);
+    let priorSessions = 0;
+    try {
+      const stats = await analyticsManager.getStats();
+      priorSessions = stats?.totalSessions || 0;
+    } catch {
+      priorSessions = 0;
+    }
+    const isFirstLaunch = distinctIdAbsent && priorSessions === 0;
     posthog.capture('app_launched', { first_launch: isFirstLaunch });
   } catch (e) {
     Logger.debug('app_launched pulse skipped:', e);

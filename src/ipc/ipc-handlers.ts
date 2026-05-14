@@ -120,6 +120,22 @@ export class IPCHandlers {
       Logger.info(`📊 [IPC] Refreshed stats: ${stats ? `${stats.totalSessions} sessions` : 'null'}`);
       return stats;
     });
+
+    // Bridge for renderer-side anonymous-usage events (onboarding funnel,
+    // future UI events). Event name + a shallow properties object only.
+    // Caller-supplied strings are NOT trusted for routing — capture()
+    // forwards verbatim and posthog.ts gates on the Settings toggle.
+    safeRegisterHandler('posthog:capture', async (_e, event: string, properties?: Record<string, any>) => {
+      try {
+        if (typeof event !== 'string' || !event) return false;
+        const { posthog } = await import('../analytics/posthog');
+        posthog.capture(event, properties && typeof properties === 'object' ? properties : {});
+        return true;
+      } catch (err) {
+        Logger.debug('[IPC] posthog:capture failed (ignored):', err);
+        return false;
+      }
+    });
   }
   
   private registerDictionaryHandlers(): void {

@@ -50,7 +50,7 @@ const Dashboard: React.FC<DashboardProps> = ({ preloadedData }) => {
   const [currentHotkey, setCurrentHotkey] = useState('fn'); // Default to 'fn'
   const [userName, setUserName] = useState(''); // User's name from settings
 
-  const [currentView, setCurrentView] = useState<ViewType>('dashboard');
+  const [currentView, setCurrentView] = useState<ViewType>('dictation');
   const [dictionaryEntries, setDictionaryEntries] = useState<DictionaryEntry[]>([]);
   const [showAddWord, setShowAddWord] = useState(false);
   const [newWord, setNewWord] = useState('');

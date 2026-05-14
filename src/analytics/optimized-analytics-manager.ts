@@ -20,7 +20,8 @@ export class OptimizedAnalyticsManager extends EventEmitter {
     words: number;
     characters: number;
     timeSaved: number;
-  } = { sessions: 0, words: 0, characters: 0, timeSaved: 0 };
+    audioMs: number;
+  } = { sessions: 0, words: 0, characters: 0, timeSaved: 0, audioMs: 0 };
 
   // Batch update timer
   private updateTimer: NodeJS.Timeout | null = null;
@@ -42,7 +43,7 @@ export class OptimizedAnalyticsManager extends EventEmitter {
     // Clear everything when user changes
     if (this.userId !== userId) {
       this.cachedStats = null;
-      this.pendingUpdates = { sessions: 0, words: 0, characters: 0, timeSaved: 0 };
+      this.pendingUpdates = { sessions: 0, words: 0, characters: 0, timeSaved: 0, audioMs: 0 };
       if (this.updateTimer) {
         clearTimeout(this.updateTimer);
         this.updateTimer = null;
@@ -125,6 +126,7 @@ export class OptimizedAnalyticsManager extends EventEmitter {
     this.pendingUpdates.words += wordCount;
     this.pendingUpdates.characters += characterCount;
     this.pendingUpdates.timeSaved += timeSaved;
+    this.pendingUpdates.audioMs += audioLengthMs;
 
     // Calculate WPM for this session (words per minute based on audio length)
     const sessionWPM = audioLengthMs > 0 ? Math.round((wordCount / audioLengthMs) * 60000) : 0;
@@ -214,7 +216,7 @@ export class OptimizedAnalyticsManager extends EventEmitter {
       await this.storage.updateStatsInBatch(this.pendingUpdates);
 
       // Clear pending updates
-      this.pendingUpdates = { sessions: 0, words: 0, characters: 0, timeSaved: 0 };
+      this.pendingUpdates = { sessions: 0, words: 0, characters: 0, timeSaved: 0, audioMs: 0 };
     } catch (error) {
       Logger.error('Failed to perform batch update:', error);
       // Keep pending updates for retry
@@ -294,14 +296,19 @@ export class OptimizedAnalyticsManager extends EventEmitter {
     if (recentSessions && recentSessions.length > 0) {
       const recentSavings = TimeSavingsCalculator.calculateCumulativeSavings(recentSessions);
 
-      // Calculate average WPM from sessions
-      let totalWords = 0;
-      let totalAudioMs = 0;
+      // Use LIFETIME audio time + words for averageWPM so numerator and
+      // denominator share the same window. baseStats._totalAudioMs is
+      // populated by LocalAnalyticsStore.toUserStats; falls back to
+      // recent-30d sum if a legacy store hasn't been backfilled yet.
+      const lifetimeAudioMs = (baseStats as any)._totalAudioMs || 0;
+      let recentAudioMs = 0;
       for (const session of recentSessions) {
-        totalWords += session.wordCount || 0;
-        totalAudioMs += session.metadata?.audioLengthMs || 0;
+        recentAudioMs += session.metadata?.audioLengthMs || 0;
       }
-      const calculatedWPM = totalAudioMs > 0 ? Math.round((totalWords / totalAudioMs) * 60000) : 0;
+      const denomAudioMs = lifetimeAudioMs > 0 ? lifetimeAudioMs : recentAudioMs;
+      const calculatedWPM = denomAudioMs > 0
+        ? Math.round((baseStats.totalWords / denomAudioMs) * 60_000)
+        : 0;
 
       this.cachedStats = {
         ...baseStats,
@@ -310,7 +317,7 @@ export class OptimizedAnalyticsManager extends EventEmitter {
         weeklyTimeSaved: recentSavings.weeklySavings,
         monthlyTimeSaved: recentSavings.monthlySavings,
         efficiencyMultiplier: recentSavings.averageEfficiency,
-        _totalAudioMs: totalAudioMs // Keep track for future calculations
+        _totalAudioMs: denomAudioMs
       } as UserStats & {
         dailyTimeSaved: number;
         weeklyTimeSaved: number;
@@ -355,7 +362,7 @@ export class OptimizedAnalyticsManager extends EventEmitter {
     this.userId = 'default-user';
     this.currentSession = null;
     this.cachedStats = null;
-    this.pendingUpdates = { sessions: 0, words: 0, characters: 0, timeSaved: 0 };
+    this.pendingUpdates = { sessions: 0, words: 0, characters: 0, timeSaved: 0, audioMs: 0 };
     if (this.updateTimer) {
       clearTimeout(this.updateTimer);
       this.updateTimer = null;

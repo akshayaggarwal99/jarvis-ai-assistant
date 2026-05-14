@@ -32,6 +32,7 @@ interface PersistedStats {
   totalSessions: number;
   totalWords: number;
   totalCharacters: number;
+  totalAudioMs: number;
   averageWPM: number;
   estimatedTimeSavedMs: number;
   streakDays: number;
@@ -73,12 +74,29 @@ const defaultStats = (): PersistedStats => ({
   totalSessions: 0,
   totalWords: 0,
   totalCharacters: 0,
+  totalAudioMs: 0,
   averageWPM: 0,
   estimatedTimeSavedMs: 0,
   streakDays: 0,
   lastActiveDate: null,
   createdAt: nowISO()
 });
+
+// Local-date key (YYYY-MM-DD) for streak comparisons. Local timezone so
+// "yesterday" matches the user's perception of yesterday.
+const dayKey = (iso: string): string => {
+  const d = new Date(iso);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const daysBetween = (aIso: string, bIso: string): number => {
+  const a = new Date(dayKey(aIso) + 'T00:00:00').getTime();
+  const b = new Date(dayKey(bIso) + 'T00:00:00').getTime();
+  return Math.round((b - a) / 86_400_000);
+};
 
 const defaultUser = (): PersistedUserData => ({
   stats: defaultStats(),
@@ -157,8 +175,9 @@ const toUserStats = (userId: string, stats: PersistedStats): UserStats => ({
   estimatedTimeSavedMs: stats.estimatedTimeSavedMs,
   streakDays: stats.streakDays,
   lastActiveDate: stats.lastActiveDate ? new Date(stats.lastActiveDate) : new Date(),
-  createdAt: stats.createdAt ? new Date(stats.createdAt) : new Date()
-});
+  createdAt: stats.createdAt ? new Date(stats.createdAt) : new Date(),
+  _totalAudioMs: stats.totalAudioMs || 0
+} as UserStats & { _totalAudioMs: number });
 
 const serializeSession = (session: TranscriptionSession): PersistedSession => ({
   id: session.id,
@@ -220,16 +239,75 @@ class LocalAnalyticsStore {
   saveSession(session: TranscriptionSession): void {
     const user = this.ensureUser();
     user.sessions.push(serializeSession(session));
-    user.stats.lastActiveDate = nowISO();
+
+    // Streak update: same local day = unchanged, next day = +1, gap = reset.
+    const now = nowISO();
+    const prev = user.stats.lastActiveDate;
+    if (!prev) {
+      user.stats.streakDays = 1;
+    } else {
+      const gap = daysBetween(prev, now);
+      if (gap === 0) {
+        if (user.stats.streakDays < 1) user.stats.streakDays = 1;
+      } else if (gap === 1) {
+        user.stats.streakDays = (user.stats.streakDays || 0) + 1;
+      } else if (gap > 1) {
+        user.stats.streakDays = 1;
+      }
+      // gap < 0 (clock skew): leave streak alone
+    }
+
+    user.stats.lastActiveDate = now;
     if (!user.stats.createdAt) {
-      user.stats.createdAt = nowISO();
+      user.stats.createdAt = now;
     }
     persistStore(this.store);
-    Logger.info(`[AnalyticsStore] Saved session ${session.id} for ${this.userId}`);
+    Logger.info(`[AnalyticsStore] Saved session ${session.id} for ${this.userId}, streak=${user.stats.streakDays}`);
   }
 
   async getStats(): Promise<UserStats | null> {
     const user = this.ensureUser();
+
+    // One-shot backfill: legacy stores were written before totalAudioMs +
+    // a working streak existed. Rebuild both from the persisted session
+    // history if they look empty/wrong. Cheap (<1k sessions typically).
+    if (
+      (!user.stats.totalAudioMs || user.stats.totalAudioMs === 0) &&
+      user.sessions.length > 0
+    ) {
+      let totalAudioMs = 0;
+      for (const s of user.sessions) {
+        totalAudioMs += s.metadata?.audioLengthMs || 0;
+      }
+      user.stats.totalAudioMs = totalAudioMs;
+      if (totalAudioMs > 0 && user.stats.totalWords > 0) {
+        user.stats.averageWPM = Math.round((user.stats.totalWords / totalAudioMs) * 60_000);
+      }
+    }
+
+    if ((user.stats.streakDays || 0) === 0 && user.sessions.length > 0) {
+      // Rebuild streak from sessions ending at lastActiveDate (or now).
+      const days = new Set<string>();
+      for (const s of user.sessions) {
+        days.add(dayKey(s.startTime));
+      }
+      const sortedDesc = Array.from(days).sort().reverse();
+      let streak = 0;
+      let cursor = dayKey(user.stats.lastActiveDate || nowISO());
+      for (const d of sortedDesc) {
+        if (d === cursor) {
+          streak += 1;
+          const c = new Date(cursor + 'T00:00:00');
+          c.setDate(c.getDate() - 1);
+          cursor = c.toISOString().slice(0, 10);
+        } else if (d < cursor) {
+          break;
+        }
+      }
+      user.stats.streakDays = streak;
+    }
+
+    persistStore(this.store);
     return toUserStats(this.userId, user.stats);
   }
 
@@ -239,12 +317,19 @@ class LocalAnalyticsStore {
     return sorted.slice(0, limitCount).map(deserializeSession);
   }
 
-  async updateStatsInBatch(updates: { sessions: number; words: number; characters: number; timeSaved: number }): Promise<void> {
+  async updateStatsInBatch(updates: { sessions: number; words: number; characters: number; timeSaved: number; audioMs?: number }): Promise<void> {
     const user = this.ensureUser();
     user.stats.totalSessions += updates.sessions;
     user.stats.totalWords += updates.words;
     user.stats.totalCharacters += updates.characters;
     user.stats.estimatedTimeSavedMs += updates.timeSaved;
+    user.stats.totalAudioMs = (user.stats.totalAudioMs || 0) + (updates.audioMs || 0);
+
+    // Lifetime WPM from matching totals — no scale mismatch.
+    if (user.stats.totalAudioMs > 0) {
+      user.stats.averageWPM = Math.round((user.stats.totalWords / user.stats.totalAudioMs) * 60_000);
+    }
+
     user.stats.lastActiveDate = nowISO();
     persistStore(this.store);
     Logger.info('[AnalyticsStore] Stats updated:', updates);
