@@ -42,6 +42,8 @@ interface AppSettings {
   customAssistantPrompt?: string;
   // Jarvis 2.0 waitlist banner
   jarvis2BannerDismissed?: boolean;
+  // Founder support / share banner
+  supportBannerDismissed?: boolean;
 }
 
 /**
