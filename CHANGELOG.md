@@ -5,6 +5,14 @@ All notable changes to Jarvis AI Assistant will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.12] - 2026-05-15
+
+### Fixed
+- **Parakeet/Sherpa-ONNX local transcription**: Long utterances no longer freeze the app and dictation no longer silently stops after a long session.
+  - `recognizer.decode()` was synchronous and blocked the Electron main process for several seconds on multi-second audio, starving IPC and audio-capture callbacks. Switched to `decodeAsync()`.
+  - The singleton recognizer was never reset after a native error; one bad decode poisoned every subsequent call. Failed transcriptions now recycle the recognizer.
+  - Per-utterance ONNX stream handles relied on GC and could accumulate hundreds of MB of native memory across a session. Streams are now released explicitly after each transcription.
+
 ## [1.1.0] - 2025-12-01
 
 ### Added
