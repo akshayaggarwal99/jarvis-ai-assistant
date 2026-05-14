@@ -271,7 +271,7 @@ export class SherpaOnnxTranscriber {
                 return null;
             }
 
-            return this.runTranscription(samples);
+            return await this.runTranscription(samples);
 
         } catch (error) {
             Logger.error('🦜 [Sherpa] Transcription failed:', error);
@@ -302,7 +302,7 @@ export class SherpaOnnxTranscriber {
                 return null;
             }
 
-            const text = this.runTranscription(samples);
+            const text = await this.runTranscription(samples);
 
             if (text !== null) {
                 return {
@@ -341,29 +341,61 @@ export class SherpaOnnxTranscriber {
         return samples;
     }
 
-    private runTranscription(samples: Float32Array): string | null {
+    private async runTranscription(samples: Float32Array): Promise<string | null> {
+        const durationSec = samples.length / 16000;
+        let stream: any = null;
         try {
-            Logger.info(`🦜 [Sherpa] Transcribing ${samples.length} samples...`);
+            Logger.info(`🦜 [Sherpa] Transcribing ${samples.length} samples (${durationSec.toFixed(1)}s)...`);
 
-            const stream = this.recognizer.createStream();
-
-            // API expects: stream.acceptWaveform({sampleRate: number, samples: Float32Array})
+            stream = this.recognizer.createStream();
             stream.acceptWaveform({ sampleRate: 16000, samples: samples });
 
-            this.recognizer.decode(stream);
+            // Use decodeAsync to avoid blocking the event loop on long utterances.
+            // The sync `decode()` was freezing the main process for seconds on
+            // multi-second audio, starving IPC and audio-capture callbacks.
+            if (typeof this.recognizer.decodeAsync === 'function') {
+                await this.recognizer.decodeAsync(stream);
+            } else {
+                this.recognizer.decode(stream);
+            }
 
             const result = this.recognizer.getResult(stream);
             const text = result?.text?.trim() || '';
 
-            // Note: stream.free() doesn't exist in this sherpa-onnx-node version
-            // The stream will be garbage collected automatically
-
             Logger.info(`🦜 [Sherpa] Result: "${text}"`);
             return text || null;
         } catch (error) {
-            Logger.error('🦜 [Sherpa] Transcription failed:', error);
+            // Recognizer may be in a corrupted state after a native error.
+            // Drop it so the next call rebuilds a fresh one instead of
+            // looping forever on a dead handle.
+            Logger.error('🦜 [Sherpa] Transcription failed, recycling recognizer:', error);
+            this.disposeRecognizer();
             return null;
+        } finally {
+            // Release the per-utterance stream's native handle promptly.
+            // ONNX activations for long audio can be hundreds of MB; relying on
+            // GC alone can leak across a session.
+            if (stream) {
+                try {
+                    if (typeof stream.free === 'function') stream.free();
+                    else if (typeof stream.close === 'function') stream.close();
+                } catch (e) {
+                    // ignore — handle may already be released
+                }
+            }
         }
+    }
+
+    private disposeRecognizer(): void {
+        if (!this.recognizer) return;
+        try {
+            if (typeof this.recognizer.close === 'function') this.recognizer.close();
+            else if (typeof this.recognizer.free === 'function') this.recognizer.free();
+        } catch (e) {
+            // ignore
+        }
+        this.recognizer = null;
+        this.currentModelId = null;
     }
 
     /**
