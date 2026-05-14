@@ -100,16 +100,6 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ stats }) => {
             </div>
           </div>
 
-          {/* Recent Activity Placeholder */}
-          <div className={`${theme.glass.primary} ${theme.radius.xl} p-6`}>
-            <h3 className={`text-base font-medium ${theme.text.primary} mb-4`}>Recent Activity</h3>
-            <div className="text-center py-8">
-              <div className={`w-8 h-8 ${theme.glass.secondary} ${theme.radius.lg} flex items-center justify-center mx-auto mb-3`}>
-                <span className={`material-icons-outlined ${theme.text.tertiary} text-sm`}>history</span>
-              </div>
-              <p className={`${theme.text.quaternary} text-xs`}>Session history coming soon</p>
-            </div>
-          </div>
         </div>
       ) : (
         <div className="text-center py-16">
