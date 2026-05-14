@@ -1000,6 +1000,15 @@ async function handleHotkeyDown() {
     Logger.warning('⚠️ [UI] Waveform window not available for immediate feedback');
   }
 
+  // Broadcast state-change to every renderer so the onboarding tutorial
+  // (and any other window listening) can react. Preload's
+  // onPushToTalkStateChange subscribes to this channel.
+  try {
+    BrowserWindow.getAllWindows().forEach(w => {
+      if (w && !w.isDestroyed()) w.webContents.send('push-to-talk-state-change', true);
+    });
+  } catch (e) { Logger.debug('state-change broadcast (down) failed:', e); }
+
   const afterUITime = performance.now();
   Logger.debug(`⚡ [TIMING] After UI feedback: ${(afterUITime - keyDownStartTime).toFixed(2)}ms (UI took ${(afterUITime - beforeUITime).toFixed(2)}ms)`);
 
@@ -1397,6 +1406,13 @@ async function handleHotkeyUp() {
 
     // ⚡ IMMEDIATE UI FEEDBACK - Stop animation and play synthesized sound
     waveformWindow?.webContents.send('push-to-talk-stop');
+
+    // Broadcast state-change to all renderers (same as key-down side).
+    try {
+      BrowserWindow.getAllWindows().forEach(w => {
+        if (w && !w.isDestroyed()) w.webContents.send('push-to-talk-state-change', false);
+      });
+    } catch (e) { Logger.debug('state-change broadcast (up) failed:', e); }
 
     // Let the service handle its own lifecycle and transcription completion
     // Don't interfere with the service state here
