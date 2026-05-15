@@ -5,6 +5,13 @@ All notable changes to Jarvis AI Assistant will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-05-15
+
+### Fixed
+- **Voice tutorial spinner stuck.** Renderer subscribed to `transcription-state-change` but main process sent `transcription-state`. Channel mismatch left the processing spinner pulsing forever. Aligned both ends.
+- **No waveform during onboarding.** The floating waveform window was lazily created by `activateOverlaysAndShortcuts()` which only runs *after* onboarding, so the tutorial had no visual/audio cue. Now created on demand from `waveform:show` and the push-to-talk start path.
+- **Double inline indicator in voice + email tutorials.** A red "Listening…" pill rendered inside the textbox on top of the floating waveform showing the same state. Pill removed (waveform owns the cue), and the textarea padding bump that made room for the now-gone pill restored.
+
 ## [1.2.0] - 2026-05-15
 
 ### Added
