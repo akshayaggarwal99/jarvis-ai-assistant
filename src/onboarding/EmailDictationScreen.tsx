@@ -333,52 +333,6 @@ const EmailDictationScreen: React.FC<EmailDictationScreenProps> = ({ onNext }) =
           }
         `}>
           
-          {/* Inline waveform overlay — same as VoiceTranscriptionScreen */}
-          {(isRecording || isProcessing) && (
-            <div className="absolute top-4 left-6 z-20 flex items-center gap-3 px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-md border border-white/10">
-              {isRecording ? (
-                <>
-                  <div className="flex items-end gap-[3px] h-4">
-                    {[0, 1, 2, 3, 4, 5, 6].map(i => (
-                      <span
-                        key={i}
-                        className="inline-block w-[3px] rounded-sm bg-red-400"
-                        style={{
-                          height: '100%',
-                          animation: `jarvisWave 0.9s ease-in-out ${i * 0.08}s infinite alternate`
-                        }}
-                      />
-                    ))}
-                  </div>
-                  <span className="text-red-300 text-xs font-medium">Listening…</span>
-                </>
-              ) : (
-                <>
-                  <div className="flex items-center gap-[3px]">
-                    {[0, 1, 2].map(i => (
-                      <span
-                        key={i}
-                        className="inline-block w-1.5 h-1.5 rounded-full bg-blue-400"
-                        style={{ animation: `jarvisDot 1s ease-in-out ${i * 0.15}s infinite` }}
-                      />
-                    ))}
-                  </div>
-                  <span className="text-blue-300 text-xs font-medium">Transcribing…</span>
-                </>
-              )}
-            </div>
-          )}
-          <style>{`
-            @keyframes jarvisWave {
-              0% { transform: scaleY(0.25); }
-              100% { transform: scaleY(1); }
-            }
-            @keyframes jarvisDot {
-              0%, 100% { opacity: 0.3; transform: scale(0.8); }
-              50% { opacity: 1; transform: scale(1.2); }
-            }
-          `}</style>
-
           {/* Enhanced Microphone Icon with Better Feedback */}
           <div className="absolute top-4 right-4 z-10">
             <div className={`
@@ -430,7 +384,7 @@ const EmailDictationScreen: React.FC<EmailDictationScreenProps> = ({ onNext }) =
             `}
             style={{ 
               paddingRight: '140px', // Increased space for microphone
-              paddingTop: isRecording || isProcessing ? '160px' : '108px', // Increased padding for recording state
+              paddingTop: '108px', // Was bumped to 160 when an inline Listening pill lived here; pill removed, padding restored
               paddingLeft: '32px', // Increased left padding
               paddingBottom: '100px' // Increased space for bottom toolbar
             }}

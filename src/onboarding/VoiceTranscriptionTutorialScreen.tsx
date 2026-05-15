@@ -12,9 +12,6 @@ const VoiceTranscriptionTutorialScreen: React.FC<VoiceTranscriptionTutorialScree
   const [showSuccess, setShowSuccess] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
 
-  // Demo text to show during transcription
-  const demoText = "Hello, this is a demo of Jarvis voice transcription. It works amazingly well!";
-
   // Enable voice tutorial mode and start full audio monitoring when component mounts
   useEffect(() => {
     const enableVoiceTutorialMode = async () => {
@@ -53,56 +50,32 @@ const VoiceTranscriptionTutorialScreen: React.FC<VoiceTranscriptionTutorialScree
     };
   }, []);
 
+  // Visual feedback on Fn press/release; real transcription comes back over
+  // `tutorial-transcription` IPC from the production push-to-talk pipeline.
   useEffect(() => {
-    const handleFnKeyPress = (event: any, isPressed: boolean) => {
+    const handleFnKeyPress = (_event: any, isPressed: boolean) => {
       setFnKeyPressed(isPressed);
-      
       if (isPressed && !hasSpoken) {
-        // Start recording - clear any existing text
         setTranscriptText('');
         setShowSuccess(false);
         setIsTyping(false);
       } else if (!isPressed && !hasSpoken) {
-        // End recording and show demo transcript with typing effect
+        // Mic released — show "transcribing…" state until real text arrives.
         setIsTyping(true);
-        
-        // Simulate typing effect
-        let currentText = '';
-        let charIndex = 0;
-        const typingInterval = setInterval(() => {
-          if (charIndex < demoText.length) {
-            currentText += demoText[charIndex];
-            setTranscriptText(currentText);
-            charIndex++;
-          } else {
-            clearInterval(typingInterval);
-            setIsTyping(false);
-            setHasSpoken(true);
-            setTimeout(() => setShowSuccess(true), 500);
-          }
-        }, 50); // 50ms per character for realistic typing
       }
     };
 
-    // Register IPC listener for Fn key events from the full audio system
     const electronAPI = (window as any).electronAPI;
-    if (electronAPI && electronAPI.onFnKeyStateChange) {
+    if (electronAPI?.onFnKeyStateChange) {
       electronAPI.onFnKeyStateChange(handleFnKeyPress);
     }
 
-    // Keyboard event listener as fallback
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Fn' || e.code === 'Fn') {
-        handleFnKeyPress(null, true);
-      }
+      if (e.key === 'Fn' || e.code === 'Fn') handleFnKeyPress(null, true);
     };
-
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key === 'Fn' || e.code === 'Fn') {
-        handleFnKeyPress(null, false);
-      }
+      if (e.key === 'Fn' || e.code === 'Fn') handleFnKeyPress(null, false);
     };
-
     document.addEventListener('keydown', handleKeyDown);
     document.addEventListener('keyup', handleKeyUp);
 
@@ -110,7 +83,21 @@ const VoiceTranscriptionTutorialScreen: React.FC<VoiceTranscriptionTutorialScree
       document.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('keyup', handleKeyUp);
     };
-  }, [hasSpoken, demoText]);
+  }, [hasSpoken]);
+
+  // Real transcription arriving from the production pipeline.
+  useEffect(() => {
+    const electronAPI = (window as any).electronAPI;
+    if (!electronAPI?.onTutorialTranscription) return;
+
+    electronAPI.onTutorialTranscription((text: string) => {
+      if (!text || hasSpoken) return;
+      setIsTyping(false);
+      setTranscriptText(text);
+      setHasSpoken(true);
+      setTimeout(() => setShowSuccess(true), 300);
+    });
+  }, [hasSpoken]);
 
   const handleTryAgain = () => {
     setHasSpoken(false);
@@ -150,7 +137,7 @@ const VoiceTranscriptionTutorialScreen: React.FC<VoiceTranscriptionTutorialScree
           Press and hold (Fn) to start dictating. Release when done speaking.
         </p>
         <div className="mt-3 px-3 py-1 bg-white/10 border border-white/20 rounded-lg text-white/80 text-xs font-medium inline-block backdrop-blur-sm">
-          ✨ Demo Mode - Shows how transcription works
+          ✨ Try it for real — your words appear below
         </div>
       </div>
 
@@ -260,7 +247,7 @@ const VoiceTranscriptionTutorialScreen: React.FC<VoiceTranscriptionTutorialScree
             <span className="font-medium text-lg">Excellent!</span>
           </div>
           <p className="text-white/70 text-sm font-light">
-            You've seen how voice transcription works. After signing in, you'll have access to this feature everywhere.
+            That's it — those are your words, transcribed locally. Press Fn in any text box and it just works.
           </p>
         </div>
       )}
@@ -269,7 +256,7 @@ const VoiceTranscriptionTutorialScreen: React.FC<VoiceTranscriptionTutorialScree
       {!showSuccess && (
         <div className="text-center">
           <p className="text-white/50 text-sm font-light italic">
-            This demo shows how transcription will work after you sign in
+            Press and hold Fn, speak a sentence, then release.
           </p>
         </div>
       )}

@@ -806,10 +806,13 @@ function startHotkeyMonitoring() {
         }
       }
 
-      // Send transcription state to all windows
+      // Send transcription state to all windows.
+      // Channel name must match preload.ts (`transcription-state-change`);
+      // the old `transcription-state` was an orphan that left the
+      // onboarding voice-tutorial UI stuck on the spinner.
       BrowserWindow.getAllWindows().forEach(window => {
         if (!window.isDestroyed()) {
-          window.webContents.send('transcription-state', isTranscribing);
+          window.webContents.send('transcription-state-change', isTranscribing);
         }
       });
     },
@@ -981,6 +984,14 @@ async function handleHotkeyDown() {
   // Check if waveform should be shown based on user settings
   const currentAppSettings = AppSettingsService.getInstance().getSettings();
   const shouldShowWaveform = currentAppSettings.showWaveform !== false;
+
+  // During onboarding voice/email tutorials, push-to-talk fires before
+  // activateOverlaysAndShortcuts() has created the waveform window.
+  // Resolve from windowManager so the tutorial gets the same visual + audio
+  // cue path as normal post-onboarding use.
+  if (!waveformWindow || waveformWindow.isDestroyed()) {
+    waveformWindow = getWaveformWindow();
+  }
 
   if (waveformWindow && !waveformWindow.isDestroyed()) {
     // Only show waveform if setting allows it

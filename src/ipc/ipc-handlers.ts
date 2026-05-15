@@ -165,7 +165,14 @@ export class IPCHandlers {
 
     safeRegisterHandler('waveform:show', async () => {
       try {
-        const win = this.windowManager.getWindow('waveform');
+        // Waveform window is normally created post-onboarding via
+        // activateOverlaysAndShortcuts(). The onboarding voice/email
+        // tutorials request it earlier than that, so create on demand.
+        let win = this.windowManager.getWindow('waveform');
+        if (!win || win.isDestroyed()) {
+          Logger.info('♫ [IPC] waveform:show — window missing, creating now');
+          win = this.windowManager.createWaveformWindow();
+        }
         if (win && !win.isDestroyed()) win.showInactive();
         return true;
       } catch (err) { Logger.debug('[IPC] waveform:show failed:', err); return false; }
