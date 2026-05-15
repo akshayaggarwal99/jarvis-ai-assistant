@@ -5,6 +5,16 @@ All notable changes to Jarvis AI Assistant will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2026-05-15
+
+### Fixed
+- **Crash on long dictations.** A user crash report on macOS (EXC_BREAKPOINT on a libuv worker thread, ~7–8 sentences of speech) showed Parakeet TDT aborting natively on very large single-input decodes. Anything beyond 30 seconds of audio is now chunked into 30s segments, decoded sequentially, and joined. Loses a small amount of accuracy at chunk seams (no left context across chunks) — that's the trade for not crashing the process.
+
+### Improved
+- **`transcription_failed` classifier.** Was a 5-bucket switch that dumped 90% of failures into `other`. Now covers sherpa-onnx, whisper-local, ffmpeg, OOM, mic permission, AI post-processing, JSON parse, native abort, stream closed — plus a sanitized `error_signature` (paths/URLs/numbers stripped) so the residual `other` bucket can still be triaged in PostHog without leaking private data.
+- **`onboarding_permission_denied` semantics.** Every user hit denial at least once because macOS users reflexively click "Don't Allow" on the first OS prompt, then come back and grant. Event now carries `attempt_number` so denials on attempt 2+ (real refusals) can be filtered from the noise. Added `onboarding_permission_granted_after_deny` so the recovery rate is measurable.
+- **Update funnel events** — `update_check_initiated`, `update_dialog_shown`, `update_download_clicked`, `update_download_complete`, `update_download_failed`, `update_install_clicked`, `update_dialog_dismissed`. Now answerable: of users who see a new release, what fraction download, install, and stick around.
+
 ## [1.2.1] - 2026-05-15
 
 ### Fixed

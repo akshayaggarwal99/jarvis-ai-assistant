@@ -11,13 +11,46 @@ import { TranscriptionResult, StreamingControl, AudioSessionData } from '../type
 function classifyTranscriptionError(err: unknown): string {
   if (!err) return 'unknown';
   const msg = String((err as any)?.message || err).toLowerCase();
-  if (msg.includes('timeout') || msg.includes('etimedout')) return 'timeout';
-  if (msg.includes('network') || msg.includes('econnrefused') || msg.includes('enotfound')) return 'network';
-  if (msg.includes('rate limit') || msg.includes('429')) return 'rate_limited';
-  if (msg.includes('401') || msg.includes('403') || msg.includes('unauthorized')) return 'auth';
-  if (msg.includes('model') && msg.includes('not')) return 'model_missing';
+  // Network / API
+  if (msg.includes('timeout') || msg.includes('etimedout') || msg.includes('etimeout')) return 'timeout';
+  if (msg.includes('network') || msg.includes('econnrefused') || msg.includes('enotfound') || msg.includes('econnreset')) return 'network';
+  if (msg.includes('rate limit') || msg.includes('429') || msg.includes('quota')) return 'rate_limited';
+  if (msg.includes('401') || msg.includes('403') || msg.includes('unauthorized') || msg.includes('invalid api key') || msg.includes('invalid_api_key')) return 'auth';
+  if (msg.includes('500') || msg.includes('502') || msg.includes('503') || msg.includes('504') || msg.includes('bad gateway')) return 'server_5xx';
+  // Local model / Sherpa / Whisper
+  if (msg.includes('sherpa') || msg.includes('onnx') || msg.includes('recognizer')) return 'sherpa_onnx';
+  if (msg.includes('whisper')) return 'whisper_local';
+  if (msg.includes('ffmpeg')) return 'ffmpeg';
+  if (msg.includes('model') && (msg.includes('not found') || msg.includes('missing') || msg.includes('not downloaded'))) return 'model_missing';
+  if (msg.includes('out of memory') || msg.includes('oom') || msg.includes('alloc')) return 'oom';
+  // Audio capture
   if (msg.includes('audio') && (msg.includes('short') || msg.includes('silent'))) return 'audio_invalid';
+  if (msg.includes('microphone') || msg.includes('permission') || msg.includes('avaudio')) return 'mic_permission';
+  if (msg.includes('audio') && msg.includes('buffer')) return 'audio_buffer';
+  // AI post-processing
+  if (msg.includes('cleantranscription') || msg.includes('post-process') || msg.includes('postprocess')) return 'post_processing';
+  if (msg.includes('json') && (msg.includes('parse') || msg.includes('unexpected'))) return 'json_parse';
+  // Native crash / abort
+  if (msg.includes('abort') || msg.includes('sigtrap') || msg.includes('check_op') || msg.includes('check failed')) return 'native_abort';
+  if (msg.includes('stream') && msg.includes('closed')) return 'stream_closed';
   return 'other';
+}
+
+// Short, PII-free signature of the error so we can disambiguate the
+// "other" bucket without leaking transcripts/paths. Strips quoted
+// substrings, file paths, URLs, numbers, hex addresses — keeps the
+// structural shape of the message (~first 80 chars).
+function sanitizeErrorSignature(err: unknown): string {
+  if (!err) return '';
+  let msg = String((err as any)?.message || err);
+  msg = msg.replace(/"[^"]*"/g, '"…"');           // quoted strings
+  msg = msg.replace(/'[^']*'/g, "'…'");
+  msg = msg.replace(/\/[\w./\-]+/g, '<path>');     // file paths
+  msg = msg.replace(/https?:\/\/\S+/gi, '<url>');  // URLs
+  msg = msg.replace(/0x[0-9a-f]+/gi, '<hex>');     // memory addresses
+  msg = msg.replace(/\b\d{3,}\b/g, '<n>');         // long numbers
+  msg = msg.replace(/\s+/g, ' ').trim();
+  return msg.slice(0, 80);
 }
 
 export class TranscriptionSessionManager {
@@ -218,7 +251,8 @@ export class TranscriptionSessionManager {
       Logger.error('🌊 [Transcription] Error in streaming transcription:', error);
       posthog.capture('transcription_failed', {
         path: 'streaming',
-        error_type: classifyTranscriptionError(error)
+        error_type: classifyTranscriptionError(error),
+        error_signature: sanitizeErrorSignature(error)
       });
       return null;
     } finally {
@@ -320,6 +354,7 @@ export class TranscriptionSessionManager {
       posthog.capture('transcription_failed', {
         path: 'traditional',
         error_type: classifyTranscriptionError(error),
+        error_signature: sanitizeErrorSignature(error),
         audio_duration_ms: duration
       });
 

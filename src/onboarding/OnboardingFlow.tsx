@@ -141,6 +141,10 @@ const PermissionsScreen: React.FC<PermissionsScreenProps> = ({ onNext, onPermiss
     microphone: false,
     accessibility: false
   });
+  // Per-permission attempt counter so PostHog can tell a first-deny
+  // (macOS prompt reflex) from a real refusal (denying again after the
+  // explainer copy). attempt_number === 1 → ignorable; > 1 → real signal.
+  const attemptCountsRef = React.useRef<Record<string, number>>({ microphone: 0, accessibility: 0 });
 
   // Check initial permission status on component mount
   useEffect(() => {
@@ -194,12 +198,25 @@ const PermissionsScreen: React.FC<PermissionsScreenProps> = ({ onNext, onPermiss
       }
 
       if (result) {
-        // Anonymous funnel: surface which permission users deny — highest-
-        // value signal for onboarding drop-off diagnosis.
-        if (!result.granted) {
-          const api = (window as any).electronAPI;
-          if (api?.posthogCapture) {
-            api.posthogCapture('onboarding_permission_denied', { type: String(type) });
+        attemptCountsRef.current[String(type)] = (attemptCountsRef.current[String(type)] || 0) + 1;
+        const attemptNumber = attemptCountsRef.current[String(type)];
+        const api = (window as any).electronAPI;
+        if (api?.posthogCapture) {
+          if (!result.granted) {
+            // Anonymous funnel: surface denials. attempt_number lets PostHog
+            // distinguish the first macOS-prompt reflex (attempt=1, common)
+            // from real refusal (attempt>=2, the actual friction signal).
+            api.posthogCapture('onboarding_permission_denied', {
+              type: String(type),
+              attempt_number: attemptNumber
+            });
+          } else if (attemptNumber > 1) {
+            // Eventually granted after one or more denials — useful so we
+            // can compute "denied first, granted later" recovery rate.
+            api.posthogCapture('onboarding_permission_granted_after_deny', {
+              type: String(type),
+              attempts_until_granted: attemptNumber
+            });
           }
         }
         setPermissions(prev => {

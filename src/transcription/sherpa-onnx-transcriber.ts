@@ -302,7 +302,17 @@ export class SherpaOnnxTranscriber {
                 return null;
             }
 
-            const text = await this.runTranscription(samples);
+            // Long-audio guard. A user crash report on macOS (EXC_BREAKPOINT on
+            // a libuv worker thread, ~7-8 sentences of speech) points at a
+            // native abort inside the Parakeet TDT decode for very large
+            // single inputs. Chunk anything beyond MAX_SAMPLES_PER_DECODE
+            // and join the per-chunk text. Loses a small amount of accuracy
+            // at chunk seams (TDT has no left-context across chunks) — that's
+            // the trade for not crashing the process.
+            const MAX_SAMPLES_PER_DECODE = 30 * 16000; // 30 s of 16 kHz audio
+            const text = samples.length > MAX_SAMPLES_PER_DECODE
+                ? await this.runChunkedTranscription(samples, MAX_SAMPLES_PER_DECODE)
+                : await this.runTranscription(samples);
 
             if (text !== null) {
                 return {
@@ -317,6 +327,19 @@ export class SherpaOnnxTranscriber {
             Logger.error('🦜 [Sherpa] Buffer transcription failed:', error);
             return null;
         }
+    }
+
+    private async runChunkedTranscription(samples: Float32Array, chunkSize: number): Promise<string | null> {
+        const totalChunks = Math.ceil(samples.length / chunkSize);
+        Logger.info(`🦜 [Sherpa] Long audio (${(samples.length / 16000).toFixed(1)}s) → ${totalChunks} chunks of ${(chunkSize / 16000).toFixed(0)}s`);
+        const pieces: string[] = [];
+        for (let i = 0; i < samples.length; i += chunkSize) {
+            const end = Math.min(i + chunkSize, samples.length);
+            const chunk = samples.subarray(i, end);
+            const text = await this.runTranscription(chunk);
+            if (text && text.trim()) pieces.push(text.trim());
+        }
+        return pieces.length > 0 ? pieces.join(' ') : null;
     }
 
     private pcm16MonoToFloat32(audioBuffer: Buffer): Float32Array | null {
