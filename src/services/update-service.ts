@@ -16,13 +16,82 @@ export class UpdateService {
     this.mainWindow = window;
   }
 
-  // Custom update check (disabled in open-source build)
+  // Polls the GitHub Releases API for the latest published release and
+  // fires `update-available` if a newer semver lands. No electron-updater
+  // dependency — DMGs are downloaded + installed manually by
+  // downloadUpdate() below. Picks the DMG asset whose name matches the
+  // current arch (Apple_Silicon vs Intel).
   async customCheckForUpdates() {
-    Logger.info('[UpdateService] Update checks disabled in open-source build');
-    Logger.info('[UpdateService] Check GitHub releases manually for updates');
-    
-    // No-op in open-source build
-    // Users can check GitHub releases page for new versions
+    try {
+      const currentVersion = require('../../package.json').version;
+      Logger.info(`[UpdateService] Checking GitHub for newer release (current: ${currentVersion})...`);
+
+      const release = await this.fetchLatestRelease();
+      if (!release || !release.tag_name) {
+        Logger.warning('[UpdateService] No release info returned from GitHub');
+        return;
+      }
+
+      const latestVersion = String(release.tag_name).replace(/^v/, '');
+      if (!this.isNewerVersion(currentVersion, latestVersion)) {
+        Logger.info(`[UpdateService] No update available. Latest: ${latestVersion}, current: ${currentVersion}`);
+        return;
+      }
+
+      const arch = process.arch === 'arm64' ? 'Apple_Silicon' : 'Intel';
+      const asset = (release.assets || []).find((a: any) => typeof a.name === 'string' && a.name.includes(arch) && a.name.endsWith('.dmg'));
+      if (!asset) {
+        Logger.warning(`[UpdateService] Newer version ${latestVersion} found, but no DMG asset matched arch=${arch}`);
+        return;
+      }
+
+      Logger.info(`[UpdateService] Update available: ${latestVersion} (${asset.name})`);
+      this.notifyUpdateAvailable({
+        version: latestVersion,
+        releaseNotes: release.body || '',
+        downloadUrl: asset.browser_download_url
+      });
+    } catch (err) {
+      Logger.error('[UpdateService] Update check failed:', err);
+    }
+  }
+
+  private fetchLatestRelease(): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const req = https.get(
+        'https://api.github.com/repos/akshayaggarwal99/jarvis-ai-assistant/releases/latest',
+        {
+          headers: {
+            'User-Agent': 'Jarvis-AI-Assistant-Updater',
+            'Accept': 'application/vnd.github+json'
+          }
+        },
+        (res) => {
+          if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            // Follow one redirect manually
+            https.get(res.headers.location, { headers: { 'User-Agent': 'Jarvis-AI-Assistant-Updater' } }, (r2) => {
+              let body = '';
+              r2.on('data', (c) => body += c);
+              r2.on('end', () => { try { resolve(JSON.parse(body)); } catch (e) { reject(e); } });
+              r2.on('error', reject);
+            });
+            return;
+          }
+          let body = '';
+          res.on('data', (c) => body += c);
+          res.on('end', () => {
+            if (!res.statusCode || res.statusCode >= 400) {
+              reject(new Error(`GitHub API returned ${res.statusCode}: ${body.slice(0, 200)}`));
+              return;
+            }
+            try { resolve(JSON.parse(body)); } catch (e) { reject(e); }
+          });
+          res.on('error', reject);
+        }
+      );
+      req.on('error', reject);
+      req.setTimeout(10000, () => { req.destroy(new Error('GitHub API request timeout')); });
+    });
   }
 
   // Get the correct architecture key for downloads
