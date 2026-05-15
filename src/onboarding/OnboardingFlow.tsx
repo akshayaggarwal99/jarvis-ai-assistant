@@ -7,6 +7,13 @@ import EmailDictationScreen from './EmailDictationScreen';
 import ApiKeySetupScreen from './ApiKeySetupScreen';
 import { theme, themeComponents } from '../styles/theme';
 
+// Module-level once-per-launch guards. Survive React remount of
+// OnboardingFlow (App.tsx briefly unmounts/remounts the tree during auth
+// hydration). useRef would reset on remount and fire the same event twice
+// ~6ms apart, which we saw in PostHog.
+const moduleStartedThisLaunch = { fired: false };
+const viewedStepsThisLaunch = new Set<string>();
+
 interface OnboardingStep {
   id: string;
   component: React.ComponentType<{ 
@@ -230,7 +237,7 @@ const PermissionsScreen: React.FC<PermissionsScreenProps> = ({ onNext, onPermiss
         </div>
         <h1 className={`text-2xl font-semibold ${theme.text.primary} mb-3`}>Grant Permissions</h1>
         <p className={`text-sm ${theme.text.secondary} max-w-sm mx-auto font-normal leading-relaxed`}>
-          Jarvis needs these permissions to work seamlessly
+          Everything is processed locally on your Mac. Nothing is uploaded.
         </p>
       </div>
         
@@ -250,7 +257,7 @@ const PermissionsScreen: React.FC<PermissionsScreenProps> = ({ onNext, onPermiss
                   <span className="px-2 py-0.5 text-xs font-medium bg-red-500/10 text-red-400 rounded-md border border-red-500/20">Required</span>
                 </div>
                 <p className={`${theme.text.tertiary} text-xs font-normal leading-relaxed`}>
-                  Required for voice dictation and push-to-talk features
+                  Hears your speech so Jarvis can transcribe it locally. Audio never leaves your Mac.
                 </p>
               </div>
             </div>
@@ -289,7 +296,7 @@ const PermissionsScreen: React.FC<PermissionsScreenProps> = ({ onNext, onPermiss
                   <span className="px-2 py-0.5 text-xs font-medium bg-red-500/10 text-red-400 rounded-md border border-red-500/20">Required</span>
                 </div>
                 <p className={`${theme.text.tertiary} text-xs font-normal leading-relaxed`}>
-                  Allows Jarvis to type text and monitor Fn key (core feature)
+                  Lets Jarvis type the transcript at your cursor and watch for the Fn key. macOS requires this for any app that types into other apps.
                 </p>
               </div>
             </div>
@@ -439,24 +446,34 @@ const OnboardingFlow: React.FC<{ onComplete: () => void }> = ({ onComplete }) =>
   // currentStep change, completed when the final Get-Started fires.
   // No PII, just step_id + step_index. Honors Settings.analytics toggle
   // on the main process side.
-  const onboardingStartFiredRef = React.useRef(false);
+  //
+  // Guard uses moduleStartedThisLaunch — a module-level flag, not useRef —
+  // because React.useRef resets on component remount. Without that, every
+  // user fired onboarding_started twice ~6ms apart (visible in PostHog),
+  // since OnboardingFlow briefly unmounts/remounts during the auth/state
+  // hydration in App.tsx.
   const onboardingCompletedRef = React.useRef(false);
   const lastViewedStepRef = React.useRef<{ id: string; index: number }>({ id: 'welcome', index: 0 });
+  const viewedStepsThisLaunchRef = React.useRef<Set<string>>(viewedStepsThisLaunch);
 
   useEffect(() => {
     const api = (window as any).electronAPI;
     if (!api?.posthogCapture) return;
-    if (!onboardingStartFiredRef.current) {
-      onboardingStartFiredRef.current = true;
+    if (!moduleStartedThisLaunch.fired) {
+      moduleStartedThisLaunch.fired = true;
       api.posthogCapture('onboarding_started', { total_steps: steps.length });
     }
     const step = steps[currentStep];
     if (step) {
       lastViewedStepRef.current = { id: step.id, index: currentStep };
-      api.posthogCapture('onboarding_step_viewed', {
-        step_id: step.id,
-        step_index: currentStep
-      });
+      const key = `${step.id}:${currentStep}`;
+      if (!viewedStepsThisLaunchRef.current.has(key)) {
+        viewedStepsThisLaunchRef.current.add(key);
+        api.posthogCapture('onboarding_step_viewed', {
+          step_id: step.id,
+          step_index: currentStep
+        });
+      }
     }
   }, [currentStep]);
 
