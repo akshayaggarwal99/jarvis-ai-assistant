@@ -100,11 +100,63 @@ export class TranscriptionSessionManager {
       // Check if streaming is enabled in settings
       const settings = AppSettingsService.getInstance().getSettings();
 
-      // If local model is enabled, don't use streaming (local models are offline-only)
+      // Local model path. If the configured model is a streaming-format
+      // sherpa-onnx model, we still want streaming — fed locally instead of
+      // through Deepgram. Offline-format local models (Whisper, Parakeet
+      // TDT) skip streaming and fall back to the traditional buffer path.
       if (settings.useLocalModel) {
-        Logger.info('🌊 [Transcription] Local Model enabled - streaming disabled for offline mode');
-        this.streamingControl = null;
-        this.useStreamingTranscription = false;
+        const { STREAMING_MODELS } = await import('../../transcription/sherpa-models');
+        const isStreamingLocal = STREAMING_MODELS.some(m => m.id === settings.localModelId);
+        if (!isStreamingLocal) {
+          Logger.info('🌊 [Transcription] Offline local model — streaming disabled');
+          this.streamingControl = null;
+          this.useStreamingTranscription = false;
+          return;
+        }
+
+        Logger.info(`🦅 [Transcription] Initializing local streaming model: ${settings.localModelId}`);
+        this.lastSentChunkIndex = 0;
+        this.streamingPartialText = '';
+        this.streamingFinalText = '';
+
+        const { SherpaOnlineTranscriber } = await import('../../transcription/sherpa-online-transcriber');
+        const online = SherpaOnlineTranscriber.getInstance();
+        const started = online.startSession();
+        if (!started) {
+          Logger.error('🦅 [Transcription] Failed to start local streaming session');
+          this.streamingControl = null;
+          this.useStreamingTranscription = false;
+          return;
+        }
+
+        // Adapter that matches the Deepgram-shaped StreamingControl
+        // interface so the rest of the pipeline (sendAudioToStream,
+        // handleStreamingTranscription) doesn't branch on backend.
+        this.streamingControl = {
+          sendAudio: (buffer: Buffer) => {
+            const text = online.feedAudio(buffer);
+            if (text) {
+              this.streamingPartialText = text;
+              this.onPartialTranscript?.(text);
+            }
+            return true;
+          },
+          finish: async () => {
+            const text = await online.finalize();
+            this.streamingFinalText = text;
+            return text;
+          },
+          stop: async () => {
+            online.cancel();
+          }
+        };
+
+        // shouldUseStreaming gate in transcribe() needs this flipped on
+        // so the streaming finalize path runs instead of the
+        // traditional-buffer fallback. Mirrors how Deepgram is enabled
+        // below.
+        this.useStreamingTranscription = true;
+        Logger.success('🦅 [Transcription] Local streaming session active');
         return;
       }
 
@@ -392,12 +444,16 @@ export class TranscriptionSessionManager {
    * Also returns false if local whisper is enabled (offline mode)
    */
   isStreamingEnabled(): boolean {
-    // If local model is enabled, streaming is always disabled
     const settings = AppSettingsService.getInstance().getSettings();
     Logger.info(`🔍 [Transcription] isStreamingEnabled check - useLocalModel: ${settings.useLocalModel}, useStreamingTranscription: ${this.useStreamingTranscription}`);
     if (settings.useLocalModel) {
-      Logger.info('🔍 [Transcription] Local Model enabled - returning FALSE for streaming');
-      return false;
+      // Local + streaming-format model → streaming is on (sherpa-onnx
+      // OnlineRecognizer). Local + offline-format model (Whisper /
+      // Parakeet TDT) → streaming off, use the buffer path.
+      const { STREAMING_MODELS } = require('../../transcription/sherpa-models');
+      const isStreamingLocal = STREAMING_MODELS.some((m: { id: string }) => m.id === settings.localModelId);
+      Logger.info(`🔍 [Transcription] Local Model streaming-capable: ${isStreamingLocal}`);
+      return isStreamingLocal && this.useStreamingTranscription;
     }
     return this.useStreamingTranscription;
   }

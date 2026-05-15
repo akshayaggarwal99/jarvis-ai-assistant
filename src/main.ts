@@ -1743,10 +1743,17 @@ app.whenReady().then(async () => {
       }
 
       const modelId = settings.localModelId;
-      const { PARAKEET_MODELS } = await import('./transcription/sherpa-models');
+      const { PARAKEET_MODELS, STREAMING_MODELS } = await import('./transcription/sherpa-models');
+      const isStreaming = STREAMING_MODELS.some(m => m.id === modelId);
       const isParakeet = PARAKEET_MODELS.some(m => m.id === modelId);
 
-      if (isParakeet) {
+      if (isStreaming) {
+        const { SherpaOnlineTranscriber } = await import('./transcription/sherpa-online-transcriber');
+        Logger.info(`🦅 [Startup] Early preload: warming streaming model ${modelId}...`);
+        const ok = await SherpaOnlineTranscriber.getInstance().preloadModel();
+        if (ok) Logger.success(`🦅 [Startup] Streaming model ready`);
+        else Logger.info('🦅 [Startup] Streaming preload skipped (model not downloaded)');
+      } else if (isParakeet) {
         const { SherpaOnnxTranscriber } = await import('./transcription/sherpa-onnx-transcriber');
         Logger.info(`🦜 [Startup] Early preload: warming Parakeet model ${modelId}...`);
         const ok = await SherpaOnnxTranscriber.getInstance().preloadModel();

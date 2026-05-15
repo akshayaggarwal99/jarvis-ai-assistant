@@ -194,10 +194,15 @@ export class IPCHandlers {
         const settings = AppSettingsService.getInstance().getSettings();
         if (!settings.useLocalModel || !settings.localModelId) return { ok: false, reason: 'not_configured' };
 
-        const { PARAKEET_MODELS } = await import('../transcription/sherpa-models');
+        const { PARAKEET_MODELS, STREAMING_MODELS } = await import('../transcription/sherpa-models');
         const isParakeet = PARAKEET_MODELS.some(m => m.id === settings.localModelId);
+        const isStreaming = STREAMING_MODELS.some(m => m.id === settings.localModelId);
 
-        if (isParakeet) {
+        if (isStreaming) {
+          const { SherpaOnlineTranscriber } = await import('../transcription/sherpa-online-transcriber');
+          const ok = await SherpaOnlineTranscriber.getInstance().preloadModel();
+          return { ok, family: 'streaming' };
+        } else if (isParakeet) {
           const { SherpaOnnxTranscriber } = await import('../transcription/sherpa-onnx-transcriber');
           const ok = await SherpaOnnxTranscriber.getInstance().preloadModel();
           return { ok, family: 'parakeet' };

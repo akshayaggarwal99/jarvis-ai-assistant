@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as https from 'https';
 import * as http from 'http';
 import { Logger } from '../core/logger';
-import { PARAKEET_MODELS } from './sherpa-models';
+import { PARAKEET_MODELS, ALL_SHERPA_MODELS, findSherpaModel, SherpaModel } from './sherpa-models';
 
 export class SherpaModelDownloader {
     private modelsDir: string;
@@ -21,16 +21,13 @@ export class SherpaModelDownloader {
 
         const models = fs.readdirSync(this.modelsDir).filter(modelId => {
             const modelPath = path.join(this.modelsDir, modelId);
-            const modelDef = PARAKEET_MODELS.find(m => m.id === modelId);
-
+            const modelDef = findSherpaModel(modelId);
             if (!modelDef) return false;
 
-            const hasEncoder = fs.existsSync(path.join(modelPath, 'encoder.int8.onnx'));
-            const hasDecoder = fs.existsSync(path.join(modelPath, 'decoder.int8.onnx'));
-            const hasJoiner = fs.existsSync(path.join(modelPath, 'joiner.int8.onnx'));
-            const hasTokens = fs.existsSync(path.join(modelPath, 'tokens.txt'));
-
-            return hasEncoder && hasDecoder && hasJoiner && hasTokens;
+            // File names come from the URL basename so .int8.onnx vs .onnx
+            // is handled per-model rather than hardcoded.
+            const expectedFiles = filesFromModel(modelDef);
+            return expectedFiles.every(f => fs.existsSync(path.join(modelPath, f.name)));
         });
 
         return models;
@@ -45,7 +42,7 @@ export class SherpaModelDownloader {
         modelId: string,
         onProgress?: (percent: number, downloadedMB: number, totalMB: number) => void
     ): Promise<boolean> {
-        const modelDef = PARAKEET_MODELS.find(m => m.id === modelId);
+        const modelDef = findSherpaModel(modelId);
         if (!modelDef) {
             Logger.error(`[SherpaDownloader] Model definition not found for ${modelId}`);
             return false;
@@ -57,14 +54,9 @@ export class SherpaModelDownloader {
         }
 
         try {
-            Logger.info(`[SherpaDownloader] Starting download for ${modelId}`);
+            Logger.info(`[SherpaDownloader] Starting download for ${modelId} (${modelDef.kind})`);
 
-            const filesToDownload = [
-                { url: modelDef.urls.encoder, name: 'encoder.int8.onnx' },
-                { url: modelDef.urls.decoder, name: 'decoder.int8.onnx' },
-                { url: modelDef.urls.joiner, name: 'joiner.int8.onnx' },
-                { url: modelDef.urls.tokens, name: 'tokens.txt' }
-            ];
+            const filesToDownload = filesFromModel(modelDef);
 
             // We'll track progress by file count for simplicity, or just pass through individual file progress
             // Since files vary wildly in size (encoder ~600MB, others small), we should ideally weigh them.
@@ -208,4 +200,21 @@ export class SherpaModelDownloader {
             downloadWithRedirects(url);
         });
     }
+}
+
+// Derive the on-disk filename for each URL from its basename. Lets streaming
+// models (encoder.onnx) and offline int8 models (encoder.int8.onnx) coexist
+// without hardcoding the filename per model. Token files are always
+// `tokens.txt` regardless of source.
+function filesFromModel(model: SherpaModel): { url: string; name: string }[] {
+    const basename = (u: string) => {
+        try { return new URL(u).pathname.split('/').pop() || 'unknown'; }
+        catch { return u.split('/').pop() || 'unknown'; }
+    };
+    return [
+        { url: model.urls.encoder, name: basename(model.urls.encoder) },
+        { url: model.urls.decoder, name: basename(model.urls.decoder) },
+        { url: model.urls.joiner, name: basename(model.urls.joiner) },
+        { url: model.urls.tokens, name: 'tokens.txt' }
+    ];
 }

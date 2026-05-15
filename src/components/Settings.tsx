@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { theme, themeComponents } from '../styles/theme';
 import { defaultDictationPrompt, defaultEmailFormattingPrompt, defaultAssistantPrompt } from '../prompts/prompts';
 import { useAudioDevices } from '../hooks/useAudioDevices';
-import { PARAKEET_MODELS } from '../transcription/sherpa-models';
+import { PARAKEET_MODELS, STREAMING_MODELS } from '../transcription/sherpa-models';
 
 // Tab types
 type SettingsTab = 'general' | 'transcription' | 'ai-models' | 'prompts' | 'system';
@@ -461,7 +461,7 @@ const Settings: React.FC = () => {
       const electronAPI = (window as any).electronAPI;
 
       // Determine model type
-      const isParakeet = PARAKEET_MODELS.some(m => m.id === modelId);
+      const isParakeet = PARAKEET_MODELS.some(m => m.id === modelId) || STREAMING_MODELS.some(m => m.id === modelId);
       const isWhisper = WHISPER_MODELS.some(m => m.id === modelId);
 
       console.log(`[Settings] Model changed to ${modelId} (Parakeet: ${isParakeet}, Whisper: ${isWhisper})`);
@@ -498,9 +498,9 @@ const Settings: React.FC = () => {
   };
 
   const handleDownloadModel = async (modelId: string) => {
-    const isParakeet = PARAKEET_MODELS.some(m => m.id === modelId);
+    const isSherpa = PARAKEET_MODELS.some(m => m.id === modelId) || STREAMING_MODELS.some(m => m.id === modelId);
 
-    if (isParakeet) {
+    if (isSherpa) {
       await handleDownloadParakeetModel(modelId);
     } else {
       await handleDownloadWhisperModel(modelId);
@@ -536,7 +536,7 @@ const Settings: React.FC = () => {
   };
 
   const handleDownloadParakeetModel = async (modelId: string) => {
-    const model = PARAKEET_MODELS.find(m => m.id === modelId);
+    const model = PARAKEET_MODELS.find(m => m.id === modelId) || STREAMING_MODELS.find(m => m.id === modelId);
     if (!model) return;
 
     setDownloadingParakeet(modelId);
@@ -1166,6 +1166,16 @@ const Settings: React.FC = () => {
                       );
                     })}
                   </optgroup>
+                  <optgroup label="Streaming (Live Transcripts)">
+                    {STREAMING_MODELS.map((model) => {
+                      const isDownloaded = downloadedParakeetModels.includes(model.id);
+                      return (
+                        <option key={model.id} value={model.id} className="bg-gray-900 text-white">
+                          {model.name} ({model.size}) - {isDownloaded ? '✓ Ready' : '↓ Download Needed'}
+                        </option>
+                      );
+                    })}
+                  </optgroup>
                 </select>
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
                   <svg className="w-4 h-4 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1176,7 +1186,7 @@ const Settings: React.FC = () => {
 
               {/* Status / Download Button */}
               {(() => {
-                const isParakeet = PARAKEET_MODELS.some(m => m.id === localModelId);
+                const isParakeet = PARAKEET_MODELS.some(m => m.id === localModelId) || STREAMING_MODELS.some(m => m.id === localModelId);
                 const isWhisper = WHISPER_MODELS.some(m => m.id === localModelId);
 
                 let isDownloaded = false;
