@@ -743,9 +743,13 @@ function startHotkeyMonitoring() {
   Logger.info(`⚙ [Hotkey] Starting monitoring - Full settings:`, allSettings);
   Logger.info(`⚙ [Hotkey] Current hotkey from settings: ${currentHotkey}`);
 
-  // Calculate if streaming should be enabled
-  const shouldUseStreaming = allSettings.useDeepgramStreaming && !allSettings.useLocalWhisper;
-  Logger.info(`⚙ [Hotkey] Streaming decision: useDeepgramStreaming=${allSettings.useDeepgramStreaming}, useLocalWhisper=${allSettings.useLocalWhisper}, shouldUseStreaming=${shouldUseStreaming}`);
+  // Calculate if streaming should be enabled. Either:
+  //   - Deepgram streaming on AND not local Whisper, OR
+  //   - Local model is a streaming-format sherpa-onnx model (new in 1.3)
+  const { STREAMING_MODELS: _STREAMING_MODELS } = require('./transcription/sherpa-models');
+  const isLocalStreamingModel = allSettings.useLocalModel && _STREAMING_MODELS.some((m: { id: string }) => m.id === allSettings.localModelId);
+  const shouldUseStreaming = (allSettings.useDeepgramStreaming && !allSettings.useLocalWhisper) || isLocalStreamingModel;
+  Logger.info(`⚙ [Hotkey] Streaming decision: useDeepgramStreaming=${allSettings.useDeepgramStreaming}, useLocalWhisper=${allSettings.useLocalWhisper}, isLocalStreamingModel=${isLocalStreamingModel}, shouldUseStreaming=${shouldUseStreaming}`);
 
   // Initialize push-to-talk service (same for all keys)
   pushToTalkService = new PushToTalkService(
