@@ -448,12 +448,15 @@ export class TranscriptionSessionManager {
     Logger.info(`🔍 [Transcription] isStreamingEnabled check - useLocalModel: ${settings.useLocalModel}, useStreamingTranscription: ${this.useStreamingTranscription}`);
     if (settings.useLocalModel) {
       // Local + streaming-format model → streaming is on (sherpa-onnx
-      // OnlineRecognizer). Local + offline-format model (Whisper /
-      // Parakeet TDT) → streaming off, use the buffer path.
+      // OnlineRecognizer). Bypass the constructor-time
+      // `useStreamingTranscription` flag, since main.ts only recomputes
+      // it on hotkey restart — switching the local model in Settings
+      // would otherwise never take effect until app relaunch.
+      // Local + offline-format model (Whisper / Parakeet TDT) → buffer path.
       const { STREAMING_MODELS } = require('../../transcription/sherpa-models');
       const isStreamingLocal = STREAMING_MODELS.some((m: { id: string }) => m.id === settings.localModelId);
       Logger.info(`🔍 [Transcription] Local Model streaming-capable: ${isStreamingLocal}`);
-      return isStreamingLocal && this.useStreamingTranscription;
+      return isStreamingLocal;
     }
     return this.useStreamingTranscription;
   }
