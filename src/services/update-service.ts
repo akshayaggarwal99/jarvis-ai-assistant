@@ -392,24 +392,45 @@ export class UpdateService {
       }
       
       Logger.info(`🔄 Replacing app at: ${appBundle}`);
-      
-      // Create backup of current app
+
+      // Stage the new bundle off-volume first via `ditto` (preserves the
+      // code signature, xattrs, and notarization ticket; plain `cp -R`
+      // strips these on macOS and Gatekeeper will refuse to relaunch).
+      const stagingPath = path.join(require('os').tmpdir(), `jarvis-update-${version}.app`);
+      if (fs.existsSync(stagingPath)) execSync(`rm -rf "${stagingPath}"`);
+      execSync(`ditto "${sourceApp}" "${stagingPath}"`);
+
+      // Move existing bundle aside as backup, then move staged into place.
+      // Two mv calls are atomic on the same filesystem so we never have a
+      // window where /Applications/<App>.app is missing on failure.
       const backupPath = `${appBundle}.backup`;
-      if (fs.existsSync(backupPath)) {
-        execSync(`rm -rf "${backupPath}"`);
+      if (fs.existsSync(backupPath)) execSync(`rm -rf "${backupPath}"`);
+      execSync(`mv "${appBundle}" "${backupPath}"`);
+      try {
+        execSync(`mv "${stagingPath}" "${appBundle}"`);
+      } catch (mvErr) {
+        // Roll back so user isn't left without an app.
+        Logger.error('❌ Move-into-place failed, rolling back:', mvErr);
+        try { execSync(`mv "${backupPath}" "${appBundle}"`); } catch { /* */ }
+        throw mvErr;
       }
-      execSync(`cp -R "${appBundle}" "${backupPath}"`);
-      
-      // Replace the app
-      execSync(`rm -rf "${appBundle}"`);
-      execSync(`cp -R "${sourceApp}" "${path.dirname(appBundle)}"`);
-      
-      // Unmount DMG
-      execSync(`hdiutil unmount "${mountPoint}"`);
-      
-      // Clean up
-      fs.unlinkSync(dmgPath);
-      
+
+      // Verify the new bundle is signed and Gatekeeper-acceptable BEFORE
+      // we relaunch. If verification fails, restore from backup.
+      try {
+        execSync(`codesign --verify --deep --strict "${appBundle}"`, { stdio: 'pipe' });
+      } catch (verifyErr) {
+        Logger.error('❌ Code signature verification failed, restoring backup:', verifyErr);
+        execSync(`rm -rf "${appBundle}"`);
+        execSync(`mv "${backupPath}" "${appBundle}"`);
+        throw new Error('Update bundle failed code signature verification');
+      }
+
+      // Cleanup successful: drop the backup, unmount, remove DMG.
+      try { execSync(`rm -rf "${backupPath}"`); } catch { /* non-fatal */ }
+      try { execSync(`hdiutil unmount "${mountPoint}"`); } catch { /* non-fatal */ }
+      try { fs.unlinkSync(dmgPath); } catch { /* non-fatal */ }
+
       Logger.info('✅ Update installed successfully');
       
       // Notify renderer that update is ready
