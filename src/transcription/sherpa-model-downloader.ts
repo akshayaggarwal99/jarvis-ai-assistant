@@ -6,6 +6,16 @@ import * as http from 'http';
 import { Logger } from '../core/logger';
 import { PARAKEET_MODELS, ALL_SHERPA_MODELS, findSherpaModel, SherpaModel } from './sherpa-models';
 
+// Per-process in-flight dedupe so a duplicate click (or a settings UI race)
+// doesn't kick off two simultaneous downloads writing to the same .download
+// temp file.
+const INFLIGHT_DOWNLOADS = new Map<string, Promise<boolean>>();
+
+// Idle socket timeout — if a chunk doesn't arrive within this window, abort
+// and let the caller decide whether to retry. Without this a stalled CDN
+// connection hangs the downloader forever.
+const DOWNLOAD_IDLE_TIMEOUT_MS = 30_000;
+
 export class SherpaModelDownloader {
     private modelsDir: string;
 
@@ -39,6 +49,22 @@ export class SherpaModelDownloader {
     }
 
     public async downloadModel(
+        modelId: string,
+        onProgress?: (percent: number, downloadedMB: number, totalMB: number) => void
+    ): Promise<boolean> {
+        const existing = INFLIGHT_DOWNLOADS.get(modelId);
+        if (existing) {
+            Logger.info(`[SherpaDownloader] Reusing in-flight download for ${modelId}`);
+            return existing;
+        }
+        const run = this.runDownload(modelId, onProgress).finally(() => {
+            INFLIGHT_DOWNLOADS.delete(modelId);
+        });
+        INFLIGHT_DOWNLOADS.set(modelId, run);
+        return run;
+    }
+
+    private async runDownload(
         modelId: string,
         onProgress?: (percent: number, downloadedMB: number, totalMB: number) => void
     ): Promise<boolean> {
@@ -105,26 +131,33 @@ export class SherpaModelDownloader {
     ): Promise<boolean> {
         return new Promise((resolve) => {
             const tempPath = destPath + '.download';
+            // If a stale .download from an interrupted run is sitting around,
+            // remove it so we don't append on top of it.
+            try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch { /* best-effort */ }
             const file = fs.createWriteStream(tempPath);
+            let settled = false;
+            const finish = (ok: boolean) => {
+                if (settled) return;
+                settled = true;
+                try { file.end(); } catch { /* */ }
+                if (!ok) {
+                    try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch { /* */ }
+                }
+                resolve(ok);
+            };
 
-            // Determine protocol based on URL
             const downloadWithRedirects = (currentUrl: string, redirectCount = 0) => {
                 if (redirectCount > 5) {
                     Logger.error(`[SherpaDownloader] Too many redirects for ${url}`);
-                    file.end();
-                    try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (e) { console.error(e); }
-                    resolve(false);
+                    finish(false);
                     return;
                 }
 
                 const lib = currentUrl.startsWith('https') ? https : http;
                 const request = lib.get(currentUrl, (response) => {
-                    // Handle redirects
                     if (response.statusCode && [301, 302, 303, 307, 308].includes(response.statusCode)) {
                         const redirectUrl = response.headers.location;
                         if (redirectUrl) {
-                            Logger.debug(`[SherpaDownloader] Redirecting to: ${redirectUrl}`);
-                            // Handle relative redirects
                             const nextUrl = redirectUrl.startsWith('http') ? redirectUrl : new URL(redirectUrl, currentUrl).toString();
                             downloadWithRedirects(nextUrl, redirectCount + 1);
                             return;
@@ -133,9 +166,7 @@ export class SherpaModelDownloader {
 
                     if (response.statusCode !== 200) {
                         Logger.error(`[SherpaDownloader] Download failed with status: ${response.statusCode}`);
-                        file.end();
-                        try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (e) { console.error(e); }
-                        resolve(false);
+                        finish(false);
                         return;
                     }
 
@@ -145,55 +176,49 @@ export class SherpaModelDownloader {
                     response.on('data', (chunk) => {
                         downloadedBytes += chunk.length;
                         file.write(chunk);
-
-                        // Log every 1MB or so to avoid spam, or if it's the first chunk
-                        if (downloadedBytes === chunk.length || downloadedBytes % (1024 * 1024) < chunk.length) {
-                            Logger.debug(`[SherpaDownloader] Received chunk. Total downloaded: ${downloadedBytes}`);
-                        }
-
                         if (onProgress) {
                             const percent = totalBytes > 0 ? Math.round((downloadedBytes / totalBytes) * 100) : 0;
                             const downloadedMB = Math.round(downloadedBytes / 1024 / 1024 * 10) / 10;
                             const totalMB = Math.round(totalBytes / 1024 / 1024 * 10) / 10;
-                            // Logger.debug(`[SherpaDownloader] Reporting progress: ${percent}% (${downloadedMB}MB / ${totalMB}MB)`);
                             onProgress(percent, downloadedMB, totalMB);
-                        } else {
-                            Logger.warning('[SherpaDownloader] onProgress callback is missing');
                         }
                     });
 
                     response.on('end', () => {
+                        if (totalBytes > 0 && downloadedBytes < totalBytes) {
+                            Logger.error(`[SherpaDownloader] Short read: ${downloadedBytes}/${totalBytes} bytes`);
+                            finish(false);
+                            return;
+                        }
                         file.end();
-
-                        // Small delay to ensure file handle is released
+                        // Small delay to ensure the write stream flushed.
                         setTimeout(() => {
                             try {
-                                if (fs.existsSync(destPath)) {
-                                    fs.unlinkSync(destPath);
-                                }
+                                if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
                                 fs.renameSync(tempPath, destPath);
                                 resolve(true);
                             } catch (error) {
                                 Logger.error(`[SherpaDownloader] Failed to save file to ${destPath}:`, error);
-                                try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (e) { console.error(e); }
-                                resolve(false);
+                                finish(false);
                             }
                         }, 200);
                     });
 
                     response.on('error', (err) => {
                         Logger.error(`[SherpaDownloader] Stream error:`, err);
-                        try { file.end(); } catch (e) { }
-                        try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (e) { console.error(e); }
-                        resolve(false);
+                        finish(false);
                     });
+                });
+
+                // Idle timeout: if the server stops sending data, abort.
+                request.setTimeout(DOWNLOAD_IDLE_TIMEOUT_MS, () => {
+                    Logger.error(`[SherpaDownloader] Download stalled for ${currentUrl}`);
+                    request.destroy(new Error('download idle timeout'));
                 });
 
                 request.on('error', (err) => {
                     Logger.error(`[SherpaDownloader] Request error:`, err);
-                    try { file.end(); } catch (e) { }
-                    try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (e) { console.error(e); }
-                    resolve(false);
+                    finish(false);
                 });
             };
 

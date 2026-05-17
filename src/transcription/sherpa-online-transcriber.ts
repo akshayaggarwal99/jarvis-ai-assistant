@@ -3,7 +3,7 @@ import path from 'path';
 import { app } from 'electron';
 import { Logger } from '../core/logger';
 import { AppSettingsService } from '../services/app-settings-service';
-import { STREAMING_MODELS, findSherpaModel } from './sherpa-models';
+import { STREAMING_MODELS, findSherpaModel, normalizeStreamingText } from './sherpa-models';
 
 // Lazy-load sherpa-onnx-node to handle native module path issues. Same
 // resolution strategy as the offline transcriber — we share the dylib
@@ -40,8 +40,10 @@ function getSherpaOnnx(): any {
     try {
         const nodeRequire = typeof __non_webpack_require__ !== 'undefined' ? __non_webpack_require__ : require;
         sherpa = nodeRequire('sherpa-onnx-node');
+        console.log('🦅 [SherpaOnline] Loaded sherpa-onnx-node');
         Logger.info('🦅 [SherpaOnline] Loaded sherpa-onnx-node');
     } catch (error) {
+        console.error('🦅 [SherpaOnline] Failed to load sherpa-onnx-node:', error);
         Logger.error('🦅 [SherpaOnline] Failed to load sherpa-onnx-node:', error);
         throw error;
     } finally {
@@ -131,6 +133,7 @@ export class SherpaOnlineTranscriber {
 
         const paths = this.getModelPaths(modelId);
         if (!paths) {
+            console.error(`🦅 [SherpaOnline] Model files not found for ${modelId} — download via Settings first`);
             Logger.error(`🦅 [SherpaOnline] Model files not found for ${modelId}`);
             return false;
         }
@@ -154,9 +157,11 @@ export class SherpaOnlineTranscriber {
             const mod = getSherpaOnnx();
             this.recognizer = new mod.OnlineRecognizer(config);
             this.currentModelId = modelId;
+            console.log(`🦅 [SherpaOnline] OnlineRecognizer initialized for ${modelId}`);
             Logger.success(`🦅 [SherpaOnline] OnlineRecognizer initialized for ${modelId}`);
             return true;
         } catch (err) {
+            console.error('🦅 [SherpaOnline] Failed to init OnlineRecognizer:', err);
             Logger.error('🦅 [SherpaOnline] Failed to init OnlineRecognizer:', err);
             this.recognizer = null;
             this.currentModelId = null;
@@ -177,6 +182,7 @@ export class SherpaOnlineTranscriber {
         try {
             this.activeStream = this.recognizer.createStream();
             this.lastEmittedText = '';
+            console.log('🦅 [SherpaOnline] Session started — fresh OnlineStream');
             Logger.info('🦅 [SherpaOnline] Session started — fresh OnlineStream');
             return true;
         } catch (err) {
@@ -204,11 +210,13 @@ export class SherpaOnlineTranscriber {
             const result = this.recognizer.getResult(this.activeStream);
             const text = result?.text?.trim() || '';
             if (text && text !== this.lastEmittedText) {
+                console.log(`🦅 [SherpaOnline] partial: "${text}"`);
                 this.lastEmittedText = text;
                 return text;
             }
             return '';
         } catch (err) {
+            console.error('🦅 [SherpaOnline] feedAudio error, recycling recognizer:', err);
             Logger.error('🦅 [SherpaOnline] feedAudio error, recycling recognizer:', err);
             this.disposeRecognizer();
             return '';
@@ -223,7 +231,9 @@ export class SherpaOnlineTranscriber {
                 this.recognizer.decode(this.activeStream);
             }
             const result = this.recognizer.getResult(this.activeStream);
-            const text = result?.text?.trim() || '';
+            const rawText = result?.text?.trim() || '';
+            const text = normalizeStreamingText(rawText);
+            console.log(`🦅 [SherpaOnline] Finalized: raw="${rawText}" → "${text}"`);
             Logger.info(`🦅 [SherpaOnline] Finalized: "${text}"`);
             return text;
         } catch (err) {

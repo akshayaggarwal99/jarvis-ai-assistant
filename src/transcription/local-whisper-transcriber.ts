@@ -237,11 +237,22 @@ export class LocalWhisperTranscriber {
   }
 
   /**
-   * Check if a specific model is downloaded
+   * Check if a specific model is downloaded AND looks intact.
+   * Catches the case where a previous download was interrupted mid-flight and
+   * left a zero-byte or truncated file behind.
    */
   isModelDownloaded(modelId: string): boolean {
     const modelPath = this.getModelPath(modelId);
-    return fs.existsSync(modelPath);
+    if (!fs.existsSync(modelPath)) return false;
+    try {
+      const stat = fs.statSync(modelPath);
+      const model = getWhisperModel(modelId);
+      // ggml whisper bins are all >50MB; anything tiny is a partial leftover.
+      const minBytes = model ? Math.floor(model.sizeBytes * 0.5) : 1_000_000;
+      return stat.size >= minBytes;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -254,9 +265,31 @@ export class LocalWhisperTranscriber {
   }
 
   /**
-   * Download a model with progress callback
+   * Download a model with progress callback.
+   *
+   * Dedupes concurrent calls for the same modelId so a duplicate click or a
+   * settings race doesn't kick off two writers on the same .download file.
    */
   async downloadModel(
+    modelId: string,
+    onProgress?: (percent: number, downloadedMB: number, totalMB: number) => void
+  ): Promise<boolean> {
+    const existing = LocalWhisperTranscriber.inFlightDownloads.get(modelId);
+    if (existing) {
+      Logger.info(`🎤 [LocalWhisper] Reusing in-flight download for ${modelId}`);
+      return existing;
+    }
+    const run = this.runDownload(modelId, onProgress).finally(() => {
+      LocalWhisperTranscriber.inFlightDownloads.delete(modelId);
+    });
+    LocalWhisperTranscriber.inFlightDownloads.set(modelId, run);
+    return run;
+  }
+
+  private static inFlightDownloads = new Map<string, Promise<boolean>>();
+  private static readonly DOWNLOAD_IDLE_TIMEOUT_MS = 30_000;
+
+  private async runDownload(
     modelId: string,
     onProgress?: (percent: number, downloadedMB: number, totalMB: number) => void
   ): Promise<boolean> {
@@ -268,8 +301,7 @@ export class LocalWhisperTranscriber {
 
     const modelPath = this.getModelPath(modelId);
 
-    // Check if already downloaded
-    if (fs.existsSync(modelPath)) {
+    if (this.isModelDownloaded(modelId)) {
       Logger.info(`🎤 [LocalWhisper] Model ${modelId} already downloaded`);
       return true;
     }
@@ -278,21 +310,30 @@ export class LocalWhisperTranscriber {
 
     return new Promise((resolve) => {
       const tempPath = modelPath + '.download';
+      try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch { /* */ }
       const file = fs.createWriteStream(tempPath);
+      let settled = false;
+      const finish = (ok: boolean) => {
+        if (settled) return;
+        settled = true;
+        try { file.end(); } catch { /* */ }
+        if (!ok) {
+          try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch { /* */ }
+        }
+        resolve(ok);
+      };
 
       const downloadWithRedirects = (url: string, redirectCount = 0) => {
         if (redirectCount > 5) {
           Logger.error('🎤 [LocalWhisper] Too many redirects');
-          resolve(false);
+          finish(false);
           return;
         }
 
-        https.get(url, (response) => {
-          // Handle redirects
+        const req = https.get(url, (response) => {
           if (response.statusCode === 301 || response.statusCode === 302) {
             const redirectUrl = response.headers.location;
             if (redirectUrl) {
-              Logger.debug(`🎤 [LocalWhisper] Redirecting to: ${redirectUrl}`);
               downloadWithRedirects(redirectUrl, redirectCount + 1);
               return;
             }
@@ -300,7 +341,7 @@ export class LocalWhisperTranscriber {
 
           if (response.statusCode !== 200) {
             Logger.error(`🎤 [LocalWhisper] Download failed with status: ${response.statusCode}`);
-            resolve(false);
+            finish(false);
             return;
           }
 
@@ -310,39 +351,43 @@ export class LocalWhisperTranscriber {
           response.on('data', (chunk) => {
             downloadedBytes += chunk.length;
             file.write(chunk);
-
             const percent = Math.round((downloadedBytes / totalBytes) * 100);
             const downloadedMB = Math.round(downloadedBytes / 1024 / 1024);
             const totalMB = Math.round(totalBytes / 1024 / 1024);
-
             onProgress?.(percent, downloadedMB, totalMB);
           });
 
           response.on('end', () => {
+            if (totalBytes > 0 && downloadedBytes < totalBytes) {
+              Logger.error(`🎤 [LocalWhisper] Short read: ${downloadedBytes}/${totalBytes}`);
+              finish(false);
+              return;
+            }
             file.end();
-
-            // Rename temp file to final path
             try {
               fs.renameSync(tempPath, modelPath);
               Logger.info(`🎤 [LocalWhisper] Model ${modelId} downloaded successfully`);
               resolve(true);
             } catch (error) {
               Logger.error('🎤 [LocalWhisper] Failed to save model:', error);
-              resolve(false);
+              finish(false);
             }
           });
 
           response.on('error', (error) => {
             Logger.error('🎤 [LocalWhisper] Download error:', error);
-            file.end();
-            if (fs.existsSync(tempPath)) {
-              fs.unlinkSync(tempPath);
-            }
-            resolve(false);
+            finish(false);
           });
-        }).on('error', (error) => {
+        });
+
+        req.setTimeout(LocalWhisperTranscriber.DOWNLOAD_IDLE_TIMEOUT_MS, () => {
+          Logger.error('🎤 [LocalWhisper] Download stalled');
+          req.destroy(new Error('download idle timeout'));
+        });
+
+        req.on('error', (error) => {
           Logger.error('🎤 [LocalWhisper] Request error:', error);
-          resolve(false);
+          finish(false);
         });
       };
 

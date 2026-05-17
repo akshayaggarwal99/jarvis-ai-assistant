@@ -24,7 +24,7 @@ export class AudioSessionManager {
   /**
    * Start audio recording
    */
-  async startRecording(onAudioLevel?: (level: number) => void): Promise<void> {
+  async startRecording(onAudioLevel?: (level: number) => void, onChunk?: (buf: Buffer) => void): Promise<void> {
     try {
       this.startTime = Date.now();
       
@@ -37,7 +37,7 @@ export class AudioSessionManager {
       if (this.audioRecorder instanceof NativeAudioRecorder) {
         Logger.info('🔧 🎤 Starting native audio recording...');
         try {
-          await this.audioRecorder.start(onAudioLevel);
+          await this.audioRecorder.start(onAudioLevel, onChunk);
           // Check if it actually started by verifying recording state
           if (this.audioRecorder.recording) {
             Logger.info('✅ ✅ Native audio recording started successfully');
@@ -58,7 +58,7 @@ export class AudioSessionManager {
           Logger.info('🔄 🎙️ FALLBACK: Native recorder failed, switching to FFmpeg...');
           try {
             this.audioRecorder = new FastAudioRecorder();
-            await this.audioRecorder.start(onAudioLevel);
+            await this.audioRecorder.start(onAudioLevel, onChunk);
             success = this.audioRecorder.recording;
             usedNative = false;
             Logger.info(success ? '✅ ✅ FFmpeg audio recording started successfully' : '❌ ❌ FFmpeg audio recording failed');
@@ -71,7 +71,7 @@ export class AudioSessionManager {
         // Already using FFmpeg recorder
         Logger.info('🔧 🎙️ Using FFmpeg audio recording...');
         try {
-          await this.audioRecorder.start(onAudioLevel);
+          await this.audioRecorder.start(onAudioLevel, onChunk);
           success = this.audioRecorder.recording;
           Logger.info(success ? '✅ ✅ FFmpeg audio recording started successfully' : '❌ ❌ FFmpeg audio recording failed');
         } catch (error) {

@@ -1,13 +1,39 @@
 // Import Logger first
 import { Logger } from './core/logger';
 
-// Simple error handlers
+// Crash capture — fire PostHog event with sanitized stack so we can see why
+// the app died on a user's machine. Best-effort; never throws.
+function sanitizeStack(stack: string | undefined, limit = 1500): string {
+  if (!stack) return '';
+  return stack
+    .replace(/\/Users\/[^/\s)]+/g, '<user>')         // strip macOS home paths
+    .replace(/file:\/\/\/[^\s)]+/g, '<file>')        // file:// paths
+    .replace(/https?:\/\/\S+/gi, '<url>')            // URLs
+    .replace(/0x[0-9a-f]+/gi, '<hex>')                // memory addresses
+    .slice(0, limit);
+}
+
+async function captureCrash(kind: 'uncaught_exception' | 'unhandled_rejection', err: any) {
+  try {
+    const { posthog } = await import('./analytics/posthog');
+    posthog.capture('app_crashed', {
+      kind,
+      error_name: err?.name || 'Unknown',
+      error_message_signature: sanitizeStack(String(err?.message || err), 120),
+      stack_signature: sanitizeStack(err?.stack, 1500)
+    });
+    await posthog.shutdown(); // drain before process potentially exits
+  } catch { /* swallow — analytics never breaks crash handling */ }
+}
+
 process.on('uncaughtException', (error) => {
   Logger.error('Uncaught Exception in main process', error);
+  void captureCrash('uncaught_exception', error);
 });
 
 process.on('unhandledRejection', (reason) => {
   Logger.error('Unhandled Promise Rejection in main process', new Error(`${reason}`));
+  void captureCrash('unhandled_rejection', reason);
 });
 
 import { SecureAPIService } from './services/secure-api-service';

@@ -298,10 +298,12 @@ class CopyAssetsPlugin {
   }
 }
 
+const IS_DEV = process.env.NODE_ENV === 'development';
+
 module.exports = [
   // Main process
   {
-    mode: 'production',
+    mode: IS_DEV ? 'development' : 'production',
     target: 'electron-main',
     entry: './src/main.ts',
     output: {
@@ -377,7 +379,7 @@ module.exports = [
   },
   // Whisper Worker (runs in child process for model caching)
   {
-    mode: 'production',
+    mode: IS_DEV ? 'development' : 'production',
     target: 'node',
     entry: './src/transcription/whisper-worker.ts',
     output: {

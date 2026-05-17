@@ -62,6 +62,20 @@ export class TranscriptionSessionManager {
   private streamingPartialText: string = '';
   private streamingFinalText: string = '';
 
+  // Rolling-decode state: when the user is on a Parakeet local model and
+  // speaks long-form, we don't wait for Fn-release to start decoding. Every
+  // ROLLING_CHUNK_BYTES of buffered audio kicks off a background decode on
+  // the warm safe (CPU) recognizer. On Fn-release only the trailing partial
+  // chunk needs decoding, so total wall-clock = max(speech_time, total_decode_time)
+  // instead of speech_time + total_decode_time.
+  private rollingActive = false;
+  private rollingModelId: string | null = null;
+  private rollingPending: Buffer[] = [];
+  private rollingPendingBytes = 0;
+  private rollingInflight: Promise<void> | null = null;
+  private rollingPieces: string[] = [];
+  private static readonly ROLLING_CHUNK_BYTES = 30 * 16000 * 2; // 30 s of 16-kHz mono 16-bit
+
   // Callbacks
   private onPartialTranscript?: (partialText: string) => void;
 
@@ -114,6 +128,7 @@ export class TranscriptionSessionManager {
           return;
         }
 
+        console.log(`🦅 [Transcription] Initializing local streaming model: ${settings.localModelId}`);
         Logger.info(`🦅 [Transcription] Initializing local streaming model: ${settings.localModelId}`);
         this.lastSentChunkIndex = 0;
         this.streamingPartialText = '';
@@ -123,6 +138,7 @@ export class TranscriptionSessionManager {
         const online = SherpaOnlineTranscriber.getInstance();
         const started = online.startSession();
         if (!started) {
+          console.error('🦅 [Transcription] Failed to start local streaming session — likely model not downloaded or config mismatch');
           Logger.error('🦅 [Transcription] Failed to start local streaming session');
           this.streamingControl = null;
           this.useStreamingTranscription = false;
@@ -136,7 +152,11 @@ export class TranscriptionSessionManager {
           sendAudio: (buffer: Buffer) => {
             const text = online.feedAudio(buffer);
             if (text) {
-              this.streamingPartialText = text;
+              // Surface partials to the UI callback only — do NOT populate
+              // streamingPartialText/Final. That field drives the
+              // orchestrator's "ultra-fast" path which skips finalize() and
+              // pastes raw text. We want finalize() to run so the streaming
+              // text gets normalized (capitalization + period) before paste.
               this.onPartialTranscript?.(text);
             }
             return true;
@@ -156,6 +176,7 @@ export class TranscriptionSessionManager {
         // traditional-buffer fallback. Mirrors how Deepgram is enabled
         // below.
         this.useStreamingTranscription = true;
+        console.log('🦅 [Transcription] Local streaming session active');
         Logger.success('🦅 [Transcription] Local streaming session active');
         return;
       }
@@ -196,6 +217,120 @@ export class TranscriptionSessionManager {
       this.streamingControl = null;
       this.useStreamingTranscription = false;
     }
+  }
+
+  /**
+   * Per-chunk live feed for streaming transcribers (sherpa-onnx OnlineRecognizer,
+   * or any future StreamingControl-shaped backend). Called from the audio
+   * recorder's chunk callback while recording is active. Cheap when no
+   * streaming control is set up.
+   */
+  feedStreamingChunk(buf: Buffer): void {
+    // Cloud-streaming path (Deepgram-style StreamingControl adapter).
+    if (this.streamingControl) {
+      try { this.streamingControl.sendAudio(buf); } catch (e) { console.error('🔌 sendAudio threw:', e); }
+    }
+    // Local rolling-decode path (Parakeet offline, decode-during-recording).
+    if (this.rollingActive) {
+      this.feedRollingChunk(buf);
+    }
+  }
+
+  /**
+   * Begin rolling-decode for the given Parakeet model. Audio chunks fed via
+   * feedStreamingChunk during recording will be batched into 30 s blocks
+   * and decoded in the background on the safe (CPU) recognizer. Only the
+   * trailing partial block is decoded after Fn-release in finishRollingDecode().
+   */
+  startRollingDecode(modelId: string): void {
+    this.rollingActive = true;
+    this.rollingModelId = modelId;
+    this.rollingPending = [];
+    this.rollingPendingBytes = 0;
+    this.rollingInflight = null;
+    this.rollingPieces = [];
+    console.log(`🌀 [Rolling] Started for ${modelId} (chunk = ${TranscriptionSessionManager.ROLLING_CHUNK_BYTES / 32000}s)`);
+  }
+
+  private feedRollingChunk(buf: Buffer): void {
+    if (!this.rollingActive) return;
+    this.rollingPending.push(buf);
+    this.rollingPendingBytes += buf.length;
+    if (this.rollingPendingBytes >= TranscriptionSessionManager.ROLLING_CHUNK_BYTES && !this.rollingInflight) {
+      this.kickOffRollingDecode();
+    }
+  }
+
+  private kickOffRollingDecode(): void {
+    if (!this.rollingModelId || this.rollingPending.length === 0) return;
+    const slice = Buffer.concat(this.rollingPending);
+    this.rollingPending = [];
+    this.rollingPendingBytes = 0;
+    const pieceIndex = this.rollingPieces.length;
+    this.rollingPieces.push(''); // reserve slot to keep order
+
+    this.rollingInflight = (async () => {
+      const startedAt = Date.now();
+      try {
+        const { SherpaOnnxTranscriber } = await import('../../transcription/sherpa-onnx-transcriber');
+        const result = await SherpaOnnxTranscriber.getInstance().transcribeBufferWithModel(slice, this.rollingModelId!);
+        const ms = Date.now() - startedAt;
+        const text = result?.text?.trim() || '';
+        this.rollingPieces[pieceIndex] = text;
+        console.log(`🌀 [Rolling] chunk #${pieceIndex} (${(slice.length / 32000).toFixed(1)}s audio → ${ms}ms decode): "${text.slice(0, 60)}${text.length > 60 ? '…' : ''}"`);
+      } catch (err) {
+        console.warn('🌀 [Rolling] decode failed (chunk dropped):', err);
+      } finally {
+        this.rollingInflight = null;
+        // If a new full chunk accumulated while we were decoding, fire next one
+        if (this.rollingActive && this.rollingPendingBytes >= TranscriptionSessionManager.ROLLING_CHUNK_BYTES) {
+          this.kickOffRollingDecode();
+        }
+      }
+    })();
+  }
+
+  /**
+   * Stop rolling, drain inflight decode, decode any trailing partial chunk,
+   * and return the joined text. Cheaper than full-audio decode because the
+   * head of the audio is already done.
+   */
+  async finishRollingDecode(): Promise<string | null> {
+    if (!this.rollingActive) return null;
+    this.rollingActive = false;
+
+    // Wait for any inflight chunk to land
+    if (this.rollingInflight) {
+      try { await this.rollingInflight; } catch { /* logged inside */ }
+    }
+
+    // Decode trailing partial (≤ 30 s)
+    if (this.rollingPending.length > 0 && this.rollingModelId) {
+      const tail = Buffer.concat(this.rollingPending);
+      this.rollingPending = [];
+      this.rollingPendingBytes = 0;
+      const startedAt = Date.now();
+      try {
+        const { SherpaOnnxTranscriber } = await import('../../transcription/sherpa-onnx-transcriber');
+        const result = await SherpaOnnxTranscriber.getInstance().transcribeBufferWithModel(tail, this.rollingModelId);
+        const ms = Date.now() - startedAt;
+        const text = result?.text?.trim() || '';
+        this.rollingPieces.push(text);
+        console.log(`🌀 [Rolling] tail (${(tail.length / 32000).toFixed(1)}s → ${ms}ms): "${text.slice(0, 60)}${text.length > 60 ? '…' : ''}"`);
+      } catch (err) {
+        console.warn('🌀 [Rolling] tail decode failed:', err);
+      }
+    }
+
+    const joined = this.rollingPieces.filter(p => p && p.length > 0).join(' ').trim();
+    console.log(`🌀 [Rolling] Done. ${this.rollingPieces.length} pieces → ${joined.length} chars`);
+    this.rollingPieces = [];
+    this.rollingModelId = null;
+    return joined || null;
+  }
+
+  isRollingActive(): boolean {
+    return this.rollingActive;
   }
 
   /**
@@ -240,7 +375,7 @@ export class TranscriptionSessionManager {
     const shouldUseStreaming = this.useStreamingTranscription && this.streamingControl;
 
     if (shouldUseStreaming) {
-      return await this.handleStreamingTranscription(transcriptionId, keyReleaseTime);
+      return await this.handleStreamingTranscription(transcriptionId, keyReleaseTime, audioSessionData);
     } else {
       return await this.handleTraditionalTranscription(audioSessionData, transcriptionId, keyReleaseTime);
     }
@@ -249,7 +384,7 @@ export class TranscriptionSessionManager {
   /**
    * Handle streaming transcription completion
    */
-  private async handleStreamingTranscription(transcriptionId: string, keyReleaseTime: number): Promise<TranscriptionResult | null> {
+  private async handleStreamingTranscription(transcriptionId: string, keyReleaseTime: number, audioSessionData?: AudioSessionData): Promise<TranscriptionResult | null> {
     try {
       Logger.info('🌊 [Transcription] Finishing streaming transcription...');
 
@@ -296,7 +431,7 @@ export class TranscriptionSessionManager {
 
       return {
         text: resultText,
-        model: 'deepgram-streaming'
+        model: 'streaming-only'
       };
 
     } catch (error) {
@@ -445,6 +580,7 @@ export class TranscriptionSessionManager {
    */
   isStreamingEnabled(): boolean {
     const settings = AppSettingsService.getInstance().getSettings();
+    console.log(`🔍 [Transcription] isStreamingEnabled check - useLocalModel: ${settings.useLocalModel}, useStreamingTranscription: ${this.useStreamingTranscription}, localModelId: ${settings.localModelId}`);
     Logger.info(`🔍 [Transcription] isStreamingEnabled check - useLocalModel: ${settings.useLocalModel}, useStreamingTranscription: ${this.useStreamingTranscription}`);
     if (settings.useLocalModel) {
       // Local + streaming-format model → streaming is on (sherpa-onnx
@@ -455,6 +591,7 @@ export class TranscriptionSessionManager {
       // Local + offline-format model (Whisper / Parakeet TDT) → buffer path.
       const { STREAMING_MODELS } = require('../../transcription/sherpa-models');
       const isStreamingLocal = STREAMING_MODELS.some((m: { id: string }) => m.id === settings.localModelId);
+      console.log(`🔍 [Transcription] Local Model streaming-capable: ${isStreamingLocal}`);
       Logger.info(`🔍 [Transcription] Local Model streaming-capable: ${isStreamingLocal}`);
       return isStreamingLocal;
     }

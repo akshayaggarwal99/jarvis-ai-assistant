@@ -86,9 +86,33 @@ export class PushToTalkOrchestrator {
       const sessionId = this.analyticsManager.startSession();
       this.stateManager.startSession(sessionId);
 
-      // 🚀 INSTANT AUDIO START - Start recording immediately for zero-latency
-      await this.audioManager.startRecording(this.options.onAudioLevel);
+      // 🚀 INSTANT AUDIO START - Start recording immediately for zero-latency.
+      // The onChunk sink dynamically forwards each captured PCM16 chunk to
+      // whatever streaming backend transcriptionManager has set up (sherpa-onnx
+      // OnlineRecognizer for local streaming; nothing for offline-buffer path).
+      // Cheap no-op when no streamingControl exists.
+      const chunkSink = (buf: Buffer) => this.transcriptionManager.feedStreamingChunk(buf);
+      await this.audioManager.startRecording(this.options.onAudioLevel, chunkSink);
       Logger.success('✅ [Orchestrator] Recording started successfully');
+
+      // Kick off rolling background decode for local Parakeet so long-form
+      // dictation doesn't wait until Fn-release to start decoding. By the
+      // time the user releases Fn, most of the audio is already transcribed —
+      // only the trailing partial chunk needs work.
+      try {
+        const { AppSettingsService } = await import('../../services/app-settings-service');
+        const { PARAKEET_MODELS } = await import('../../transcription/sherpa-models');
+        const settings = AppSettingsService.getInstance().getSettings();
+        if (settings.useLocalModel) {
+          const modelId = settings.localModelId;
+          const isParakeet = PARAKEET_MODELS.some(m => m.id === modelId);
+          if (isParakeet) {
+            this.transcriptionManager.startRollingDecode(modelId);
+          }
+        }
+      } catch (e) {
+        Logger.debug('[Orchestrator] Rolling-decode startup skipped:', e);
+      }
 
       // ⚡ DEFERRED BACKGROUND TASKS - Run context detection completely in background
       setImmediate(() => {
@@ -228,6 +252,26 @@ export class PushToTalkOrchestrator {
    */
   private async handleTraditionalFlow(audioSessionData: any, transcriptionId: string, keyReleaseTime: number): Promise<void> {
     Logger.info('🎙️ [Orchestrator] Processing traditional flow');
+
+    // If rolling-decode ran during recording, prefer its result (most of the
+    // audio is already transcribed; only the trailing partial chunk decodes
+    // here on Fn-release). Falls through to full-audio decode otherwise.
+    if (this.transcriptionManager.isRollingActive()) {
+      const startedAt = Date.now();
+      const rollingText = await this.transcriptionManager.finishRollingDecode();
+      const ms = Date.now() - startedAt;
+      Logger.info(`🌀 [Orchestrator] Rolling finalize in ${ms}ms → "${(rollingText || '').slice(0, 60)}…"`);
+      if (rollingText) {
+        await this.processTranscriptionResult({
+          text: rollingText,
+          model: 'parakeet-rolling',
+          isAssistant: false
+        }, transcriptionId);
+        return;
+      }
+      // Empty rolling result → fall back to full decode
+      Logger.warning('🌀 [Orchestrator] Rolling returned empty, falling back to full-buffer decode');
+    }
 
     const transcriptionResult = await this.transcriptionManager.transcribe(audioSessionData, transcriptionId, keyReleaseTime);
 

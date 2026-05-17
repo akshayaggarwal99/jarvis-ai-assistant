@@ -112,10 +112,12 @@ class PostHog {
     }, this.FLUSH_INTERVAL_MS);
   }
 
-  async flush(): Promise<void> {
+  async flush(timeoutMs = 4_000): Promise<void> {
     if (!POSTHOG_API_KEY || this.queue.length === 0) return;
     const batch = this.queue.splice(0, this.queue.length);
     const distinct_id = this.getDistinctId();
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), timeoutMs);
     try {
       await fetch(`${POSTHOG_HOST}/batch/`, {
         method: 'POST',
@@ -128,20 +130,22 @@ class PostHog {
             properties: b.properties,
             timestamp: b.timestamp
           }))
-        })
+        }),
+        signal: controller.signal
       });
     } catch (err) {
-      // Never let analytics failures affect the app. Drop the batch.
       Logger.debug('[posthog] flush failed (ignored):', err);
+    } finally {
+      clearTimeout(t);
     }
   }
 
-  async shutdown(): Promise<void> {
+  async shutdown(timeoutMs = 1_500): Promise<void> {
     if (this.flushTimer) {
       clearTimeout(this.flushTimer);
       this.flushTimer = null;
     }
-    await this.flush();
+    await this.flush(timeoutMs);
   }
 }
 

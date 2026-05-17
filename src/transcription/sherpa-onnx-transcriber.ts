@@ -71,8 +71,21 @@ declare const __non_webpack_require__: NodeRequire | undefined;
 
 export class SherpaOnnxTranscriber {
     private static instance: SherpaOnnxTranscriber;
-    private recognizer: any = null;
+    // Two recognizers stay warm simultaneously to avoid the ~2s
+    // dispose/reinit churn on every long dictation:
+    //   recognizerFast  → CoreML EP (or platform-preferred), short audio
+    //   recognizerSafe  → CPU EP, chunked long-audio decode
+    // ~1.2GB total RAM for Parakeet TDT 0.6B int8 × 2. Acceptable on
+    // M-series Macs with ≥16GB. CoreML EP crashes on chunked decode
+    // (Context leak in MultiArrayBuffer alloc); CPU EP handles long
+    // audio reliably but is slower per token, so we route by length.
+    private recognizerFast: any = null;
+    private recognizerSafe: any = null;
     private currentModelId: string | null = null;
+    // Legacy single-slot alias used by older internal helpers
+    // (runTranscription, getResult). Always points at the most recently
+    // initialized recognizer; chunked path overrides with its own.
+    private recognizer: any = null;
 
     public static getInstance(): SherpaOnnxTranscriber {
         if (!SherpaOnnxTranscriber.instance) {
@@ -115,7 +128,12 @@ export class SherpaOnnxTranscriber {
         Logger.info(`🦜 [Sherpa] Preloading model: ${modelId}...`);
         const startTime = Date.now();
 
-        const success = this.initRecognizer(modelId);
+        // Warm BOTH slots: fast (CoreML) for short audio, safe (CPU) for
+        // long chunked decode. Both at startup so the first long-dictation
+        // doesn't pay init cost on top of decode.
+        const fastOk = this.initRecognizer(modelId, 'fast');
+        const safeOk = this.initRecognizer(modelId, 'safe');
+        const success = fastOk; // primary slot is fast
 
         const elapsed = Date.now() - startTime;
         if (success) {
@@ -146,20 +164,17 @@ export class SherpaOnnxTranscriber {
         return null;
     }
 
-    private initRecognizer(modelId: string): boolean {
-        // If already initialized with valid model, return true
-        if (this.recognizer && this.currentModelId === modelId) {
+    private initRecognizer(modelId: string, mode: 'fast' | 'safe' = 'fast'): boolean {
+        // Skip if requested slot already holds a recognizer for this model
+        const existing = mode === 'safe' ? this.recognizerSafe : this.recognizerFast;
+        if (existing && this.currentModelId === modelId) {
+            this.recognizer = existing;
             return true;
         }
 
-        // If switching models, dispose old one (if close method exists)
-        if (this.recognizer && typeof this.recognizer.close === 'function') {
-            try {
-                this.recognizer.close();
-            } catch (e) {
-                // ignore
-            }
-            this.recognizer = null;
+        // If switching models entirely, drop both slots
+        if (this.currentModelId && this.currentModelId !== modelId) {
+            this.disposeAll();
         }
 
         const paths = this.getModelPaths(modelId);
@@ -168,39 +183,74 @@ export class SherpaOnnxTranscriber {
             return false;
         }
 
-        try {
-            // Sherpa-ONNX configuration for OfflineRecognizer
-            // The TDT model uses a Transducer architecture with separate encoder/decoder/joiner
-            const config = {
-                featConfig: {
-                    sampleRate: 16000,
-                    featureDim: 80,
+        const cores = require('os').cpus().length || 4;
+        const threadCount = Math.max(2, Math.min(6, Math.floor(cores / 2)));
+
+        // Provider per mode:
+        //   fast (short audio): platform-preferred (CoreML on darwin) for ANE perf
+        //   safe (long audio): CPU EP — CoreML crashes on chunked decode with
+        //     "Context leak detected, CoreAnalytics returned false" → SIGTRAP
+        const platform = process.platform;
+        const platformPreferred =
+            platform === 'darwin' ? 'coreml' :
+            platform === 'linux' || platform === 'win32' ? 'xnnpack' :
+            'cpu';
+        const targetProvider = mode === 'safe' ? 'cpu' : platformPreferred;
+
+        const buildConfig = (provider: string) => ({
+            featConfig: {
+                sampleRate: 16000,
+                featureDim: 80,
+            },
+            modelConfig: {
+                transducer: {
+                    encoder: paths.encoderPath,
+                    decoder: paths.decoderPath,
+                    joiner: paths.joinerPath,
                 },
-                modelConfig: {
-                    transducer: {
-                        encoder: paths.encoderPath,
-                        decoder: paths.decoderPath,
-                        joiner: paths.joinerPath,
-                    },
-                    tokens: paths.tokensPath,
-                    numThreads: 2,
-                    provider: "cpu",
-                    debug: false,
+                tokens: paths.tokensPath,
+                numThreads: threadCount,
+                provider,
+                debug: false,
+            }
+        });
+
+        const sherpaModule = getSherpaOnnx();
+
+        for (const provider of [targetProvider, 'cpu']) {
+            try {
+                Logger.info(`🦜 [Sherpa] Initializing ${mode} recognizer (${provider}, ${threadCount} threads) for ${modelId}`);
+                const instance = new sherpaModule.OfflineRecognizer(buildConfig(provider));
+                if (mode === 'safe') {
+                    this.recognizerSafe = instance;
+                } else {
+                    this.recognizerFast = instance;
                 }
-            };
-
-            Logger.info(`🦜 [Sherpa] Initializing recognizer with model: ${modelId}`);
-            const sherpaModule = getSherpaOnnx();
-            this.recognizer = new sherpaModule.OfflineRecognizer(config);
-            this.currentModelId = modelId;
-            Logger.success('🦜 [Sherpa] Recognizer initialized successfully');
-            return true;
-
-        } catch (error) {
-            Logger.error('🦜 [Sherpa] Failed to initialize recognizer:', error);
-            this.recognizer = null;
-            return false;
+                this.recognizer = instance;
+                this.currentModelId = modelId;
+                Logger.success(`🦜 [Sherpa] ${mode} recognizer ready via ${provider}`);
+                return true;
+            } catch (error) {
+                Logger.warn(`🦜 [Sherpa] ${mode} init via ${provider} failed: ${error instanceof Error ? error.message : String(error)}`);
+                if (provider === 'cpu') {
+                    Logger.error(`🦜 [Sherpa] All providers exhausted for ${mode} slot`);
+                    return false;
+                }
+            }
         }
+        return false;
+    }
+
+    private disposeAll(): void {
+        for (const slot of ['recognizerFast', 'recognizerSafe'] as const) {
+            const r = (this as any)[slot];
+            if (r && typeof r.close === 'function') {
+                try { r.close(); } catch { /* ignore */ }
+            }
+            (this as any)[slot] = null;
+        }
+        this.recognizer = null;
+        this.currentModelId = null;
     }
 
     /**
@@ -279,6 +329,33 @@ export class SherpaOnnxTranscriber {
         }
     }
 
+    /**
+     * Warm a specific offline Parakeet model regardless of what the user has
+     * selected as the active local model. Used for hybrid-mode preload so
+     * the first re-decode after Fn-up doesn't pay the ONNX init cost.
+     */
+    public preloadModelById(modelId: string): boolean {
+        const isParakeet = PARAKEET_MODELS.some(m => m.id === modelId);
+        if (!isParakeet) return false;
+        const fastOk = this.initRecognizer(modelId, 'fast');
+        this.initRecognizer(modelId, 'safe'); // best-effort warm both
+        return fastOk;
+    }
+
+    /**
+     * Hybrid-mode entry point: bypasses the Settings.localModelId check so
+     * the caller can re-decode buffered audio through a specific offline
+     * Parakeet model (typically Parakeet TDT 0.6B) even when the user has a
+     * different model selected as their "live" choice (e.g. a streaming
+     * Fast Conformer). Same chunking + recycle logic as transcribeFromBuffer.
+     */
+    public async transcribeBufferWithModel(audioBuffer: Buffer, modelId: string): Promise<{ text: string; isAssistant: boolean; model: string } | null> {
+        const isParakeet = PARAKEET_MODELS.some(m => m.id === modelId);
+        if (!isParakeet) return null;
+        if (!this.initRecognizer(modelId)) return null;
+        return this.runBufferDecode(audioBuffer, modelId);
+    }
+
     public async transcribeFromBuffer(audioBuffer: Buffer): Promise<{ text: string; isAssistant: boolean; model: string } | null> {
         const settings = AppSettingsService.getInstance().getSettings();
         if (!settings.useLocalModel) return null;
@@ -292,6 +369,10 @@ export class SherpaOnnxTranscriber {
             return null;
         }
 
+        return this.runBufferDecode(audioBuffer, modelId);
+    }
+
+    private async runBufferDecode(audioBuffer: Buffer, modelId: string): Promise<{ text: string; isAssistant: boolean; model: string } | null> {
         try {
             Logger.info(`🦜 [Sherpa] Preparing audio from buffer (${audioBuffer.length} bytes)...`);
 
@@ -302,17 +383,28 @@ export class SherpaOnnxTranscriber {
                 return null;
             }
 
-            // Long-audio guard. A user crash report on macOS (EXC_BREAKPOINT on
-            // a libuv worker thread, ~7-8 sentences of speech) points at a
-            // native abort inside the Parakeet TDT decode for very large
-            // single inputs. Chunk anything beyond MAX_SAMPLES_PER_DECODE
-            // and join the per-chunk text. Loses a small amount of accuracy
-            // at chunk seams (TDT has no left-context across chunks) — that's
-            // the trade for not crashing the process.
+            // Long-audio guard + provider routing:
+            //   Short audio → recognizerFast (CoreML/ANE)
+            //   Long audio  → recognizerSafe (CPU, chunked)
+            // Both stay warm in parallel — no dispose/reinit churn between
+            // dictations. ~1.2GB combined RAM cost on Parakeet TDT 0.6B.
             const MAX_SAMPLES_PER_DECODE = 30 * 16000; // 30 s of 16 kHz audio
-            const text = samples.length > MAX_SAMPLES_PER_DECODE
+            const needsChunking = samples.length > MAX_SAMPLES_PER_DECODE;
+
+            // Ensure the right slot is warm and point this.recognizer at it
+            const mode = needsChunking ? 'safe' : 'fast';
+            if (!this.initRecognizer(modelId, mode)) return null;
+            // initRecognizer already set this.recognizer to the right slot
+
+            const text = needsChunking
                 ? await this.runChunkedTranscription(samples, MAX_SAMPLES_PER_DECODE)
                 : await this.runTranscription(samples);
+
+            // After a chunked decode, point this.recognizer back at the fast
+            // slot so the next short call uses CoreML without a swap step.
+            if (needsChunking && this.recognizerFast) {
+                this.recognizer = this.recognizerFast;
+            }
 
             if (text !== null) {
                 return {
@@ -391,8 +483,11 @@ export class SherpaOnnxTranscriber {
             // Recognizer may be in a corrupted state after a native error.
             // Drop it so the next call rebuilds a fresh one instead of
             // looping forever on a dead handle.
-            Logger.error('🦜 [Sherpa] Transcription failed, recycling recognizer:', error);
-            this.disposeRecognizer();
+            // Native error → state could be corrupted in either slot.
+            // Drop both; both will rebuild on next call. Safer than
+            // leaving the bad recognizer in place and looping.
+            Logger.error('🦜 [Sherpa] Transcription failed, dropping both recognizer slots:', error);
+            this.disposeAll();
             return null;
         } finally {
             // Release the per-utterance stream's native handle promptly.
@@ -409,16 +504,10 @@ export class SherpaOnnxTranscriber {
         }
     }
 
+    // Legacy single-slot dispose. Kept as alias for any old callers; new
+    // code paths should use disposeAll() which drops both slots.
     private disposeRecognizer(): void {
-        if (!this.recognizer) return;
-        try {
-            if (typeof this.recognizer.close === 'function') this.recognizer.close();
-            else if (typeof this.recognizer.free === 'function') this.recognizer.free();
-        } catch (e) {
-            // ignore
-        }
-        this.recognizer = null;
-        this.currentModelId = null;
+        this.disposeAll();
     }
 
     /**

@@ -161,103 +161,134 @@ export class FastAssistantTranscriber {
     // Ensure services are warmed up (usually already done in constructor)
     await this.warmUpServices();
 
-    // Check if local Transcription is enabled in settings
     const settings = AppSettingsService.getInstance().getSettings();
-    console.log(`🎯 [FastAssistant] Settings check - useLocalModel: ${settings.useLocalModel}, localModelId: ${settings.localModelId}`);
-    Logger.info(`🎯 [FastAssistant] Settings check - useLocalModel: ${settings.useLocalModel}, localModelId: ${settings.localModelId}`);
+    const transcriptionLanguage = settings.transcriptionLanguage || 'en-US';
+
+    // Probe keys ONCE up front so local-fallback + provider routing share state.
+    const [openaiKey, deepgramKey, geminiKey] = await Promise.all([
+      this.secureAPI.getOpenAIKey().catch(() => ''),
+      this.secureAPI.getDeepgramKey().catch(() => ''),
+      this.secureAPI.getGeminiKey().catch(() => '')
+    ]);
+    const hasOpenAI = !!openaiKey;
+    const hasDeepgram = !!deepgramKey;
+    const hasGemini = !!geminiKey;
 
     if (settings.useLocalModel === true) {
-      Logger.info('🎤 [FastAssistant] Local model mode enabled - using offline transcription');
+      Logger.info(`🎤 [FastAssistant] Local model mode — model: ${settings.localModelId}`);
       try {
-        const localResult = await this.transcribeWithLocalModel(audioBuffer);
+        const localResult = await this.transcribeWithLocalModel(audioBuffer, { allowMidFlightDownload: false });
         if (localResult) {
           return localResult;
         }
-        Logger.warning('🎤 [FastAssistant] Local model failed, falling back to cloud APIs');
+        Logger.warning('🎤 [FastAssistant] Local model unavailable, falling back to cloud');
       } catch (error) {
-        Logger.warning('🎤 [FastAssistant] Local model error, falling back to cloud APIs:', error);
+        Logger.warning('🎤 [FastAssistant] Local model error, falling back to cloud:', error);
+      }
+      if (!hasOpenAI && !hasDeepgram && !hasGemini) {
+        // No cloud key to fall back to — surface a clear error instead of
+        // throwing a generic "No API keys available".
+        throw new Error('Local model not ready and no cloud API key configured. Add a key in Settings → API Keys or finish downloading the local model.');
       }
     }
 
-    const transcriptionLanguage = settings.transcriptionLanguage || 'en-US';
-
-    // Check if audio needs compression for long recordings (instead of chunking)
-    const compressedTranscriber = this.getCompressedTranscriber();
-    const needsCompression = compressedTranscriber.needsCompression(audioBuffer, audioDurationMs);
-
-    if (needsCompression && audioDurationMs) {
-      Logger.info(`️ [Fast] Long audio detected (${Math.round(audioDurationMs / 1000)}s, ${Math.round(audioBuffer.length / 1024)}KB) - using compression`);
-      const result = await compressedTranscriber.transcribeCompressedBuffer(audioBuffer, audioDurationMs);
-      return this.processTranscription(result.text, result.model);
+    // Compressed-buffer path is OpenAI-only. Only route there when user has
+    // OpenAI but not Deepgram (Nova-3 handles long audio on its own).
+    if (audioDurationMs && hasOpenAI && !hasDeepgram) {
+      const compressedTranscriber = this.getCompressedTranscriber();
+      if (compressedTranscriber.needsCompression(audioBuffer, audioDurationMs)) {
+        Logger.info(`🗜️ [Fast] Long audio (${Math.round(audioDurationMs / 1000)}s) — OpenAI compressed path`);
+        const result = await compressedTranscriber.transcribeCompressedBuffer(audioBuffer, audioDurationMs);
+        return this.processTranscription(result.text, result.model);
+      }
     }
 
-    // Smart API selection based on audio duration
-    const shouldUseOpenAI = !audioDurationMs || audioDurationMs > 10000; // >10s or unknown duration
-    Logger.debug(`🎯 [SmartAPI] Audio duration: ${audioDurationMs}ms, using ${shouldUseOpenAI ? 'OpenAI' : 'Deepgram'}`);
+    // Provider priority:
+    //   long + OpenAI + Deepgram → OpenAI first (accuracy on long form)
+    //   else Deepgram first if present (fast, low cost)
+    //   else OpenAI
+    const isLong = !audioDurationMs || audioDurationMs > 10000;
+    const order: Array<'deepgram' | 'openai'> = (isLong && hasOpenAI && hasDeepgram)
+      ? ['openai', 'deepgram']
+      : hasDeepgram
+        ? ['deepgram', 'openai']
+        : ['openai', 'deepgram'];
 
-    if (shouldUseOpenAI) {
-      // For longer audio (>10s) or unknown duration, use OpenAI for better accuracy and formatting
+    Logger.info(`🎯 [SmartAPI] keys: deepgram=${hasDeepgram}, openai=${hasOpenAI}, gemini=${hasGemini}; long=${isLong}; order=${order.join(',')}`);
+
+    const { posthog } = await import('../analytics/posthog');
+
+    let lastError: unknown = null;
+    for (const provider of order) {
+      const providerStart = Date.now();
       try {
-        const openaiKey = await this.secureAPI.getOpenAIKey();
-        if (openaiKey) {
-          const keyPreview = openaiKey.substring(0, 10) + '...' + openaiKey.slice(-4);
-          Logger.info(`🔑 [OpenAI] Using API key: ${keyPreview}`);
-
-          try {
-            return await this.transcribeWithOpenAIBuffer(audioBuffer, transcriptionLanguage);
-          } catch (error) {
-            Logger.warning('OpenAI failed, falling back to Gemini:', error);
-          }
+        let result: { text: string; isAssistant: boolean; model: string } | null = null;
+        if (provider === 'deepgram' && hasDeepgram) {
+          result = await this.transcribeWithDeepgram(audioBuffer, transcriptionLanguage);
+        } else if (provider === 'openai' && hasOpenAI) {
+          result = await this.transcribeWithOpenAIBuffer(audioBuffer, transcriptionLanguage);
         } else {
-          Logger.warning('🔑 [OpenAI] No API key found');
+          continue;
         }
-      } catch (error) {
-        Logger.warning('Failed to get OpenAI key:', error);
-      }
-    } else {
-      // For shorter audio (<10s), try Deepgram first for speed
-      try {
-        const deepgramResult = await this.transcribeWithDeepgram(audioBuffer, transcriptionLanguage);
-        if (deepgramResult) {
-          return deepgramResult;
+        if (result) {
+          posthog.capture('transcription_provider_attempt', {
+            provider,
+            outcome: 'success',
+            latency_ms: Date.now() - providerStart,
+            audio_duration_ms: audioDurationMs,
+            audio_bytes: audioBuffer.length
+          });
+          return result;
         }
+        posthog.capture('transcription_provider_attempt', {
+          provider,
+          outcome: 'empty_result',
+          latency_ms: Date.now() - providerStart,
+          audio_duration_ms: audioDurationMs
+        });
       } catch (error) {
-        Logger.warning('Deepgram failed, falling back to OpenAI:', error);
-      }
-
-      // Fallback to OpenAI for short audio too
-      try {
-        const openaiKey = await this.secureAPI.getOpenAIKey();
-        if (openaiKey) {
-          return await this.transcribeWithOpenAIBuffer(audioBuffer, transcriptionLanguage);
-        }
-      } catch (error) {
-        Logger.warning('OpenAI fallback failed:', error);
+        lastError = error;
+        Logger.warning(`${provider} failed, trying next provider:`, error);
+        const msg = String((error as any)?.message || error).toLowerCase();
+        const errType =
+          msg.includes('429') || msg.includes('rate') ? 'rate_limited' :
+          msg.includes('401') || msg.includes('403') || msg.includes('unauthorized') || msg.includes('invalid api key') ? 'auth' :
+          msg.includes('timeout') || msg.includes('aborted') ? 'timeout' :
+          msg.includes('network') || msg.includes('econnrefused') || msg.includes('enotfound') || msg.includes('econnreset') ? 'network' :
+          'other';
+        posthog.capture('transcription_provider_attempt', {
+          provider,
+          outcome: 'error',
+          error_type: errType,
+          latency_ms: Date.now() - providerStart,
+          audio_duration_ms: audioDurationMs
+        });
       }
     }
 
-    try {
-      const geminiKey = await this.secureAPI.getGeminiKey();
-      if (geminiKey) {
+    if (hasGemini) {
+      try {
         return await this.transcribeWithGeminiFlashBuffer(audioBuffer);
-      } else {
-        Logger.warning('🔑 [Gemini] No API key found');
+      } catch (error) {
+        lastError = error;
+        Logger.warning('Gemini fallback failed:', error);
       }
-    } catch (error) {
-      Logger.warning('Failed to get Gemini key:', error);
     }
 
-    // Run network diagnostics if both APIs failed
-    Logger.warning('🔍 [Network] Both OpenAI and Gemini failed - running diagnostics...');
+    // All providers failed. Run network diagnostics for the log so we know
+    // whether the user is offline.
     try {
       await NetworkDiagnostics.testConnectivity();
-    } catch (diagnosticError) {
-      Logger.error('🔍 [Network] Diagnostic test failed:', diagnosticError);
-    }
+    } catch { /* diagnostics are best-effort */ }
 
     const totalTime = Date.now() - startTime;
     Logger.info(`⏱️ [FastAssistant] Total buffer transcription took ${totalTime}ms`);
-    throw new Error('No API keys available');
+
+    if (!hasOpenAI && !hasDeepgram && !hasGemini) {
+      throw new Error('No API keys configured. Add one in Settings → API Keys.');
+    }
+    const detail = lastError instanceof Error ? lastError.message : 'unknown error';
+    throw new Error(`Transcription failed across all providers: ${detail}`);
   }
 
   // Simplified methods that will work with SecureAPIService
@@ -572,79 +603,71 @@ export class FastAssistantTranscriber {
     throw lastError || new Error('Max retries exceeded');
   }
 
-  // Smart API selection methods
   private async transcribeWithDeepgram(audioBuffer: Buffer, language?: string): Promise<{ text: string; isAssistant: boolean; model: string } | null> {
-    try {
-      const deepgramKey = await this.secureAPI.getDeepgramKey();
-      if (!deepgramKey) {
-        Logger.warning('🔑 [Deepgram] No API key found');
-        return null;
-      }
+    const deepgramKey = await this.secureAPI.getDeepgramKey().catch(() => '');
+    if (!deepgramKey) return null;
 
-      const { DeepgramTranscriber } = await import('./deepgram-transcriber');
-      const deepgram = new DeepgramTranscriber(deepgramKey);
-      const startTime = Date.now();
-      const result = await deepgram.transcribeFromBuffer(audioBuffer, { language });
-      Logger.info(`⏱️ [Deepgram] Transcription API call took ${Date.now() - startTime}ms`);
-
-      if (result) {
-        return await this.processTranscription(result.text, result.model);
-      }
-      return null;
-    } catch (error) {
-      Logger.warning('Deepgram transcription failed:', error);
-      return null;
+    const { DeepgramTranscriber } = await import('./deepgram-transcriber');
+    const deepgram = new DeepgramTranscriber(deepgramKey);
+    const startTime = Date.now();
+    // transcribeFromBuffer now throws on auth/network/timeout so the caller's
+    // catch block can classify and try the next provider. It returns null
+    // only for legitimate empty transcripts.
+    const result = await deepgram.transcribeFromBuffer(audioBuffer, { language });
+    Logger.info(`⏱️ [Deepgram] Transcription API call took ${Date.now() - startTime}ms`);
+    if (result) {
+      return await this.processTranscription(result.text, result.model);
     }
+    return null;
   }
 
   /**
-   * Transcribe using local model (Whisper or Sherpa/Parakeet)
+   * Transcribe using local model (Whisper or Sherpa/Parakeet).
+   * Returns null on any local failure so the caller can fall back to cloud.
+   * Never blocks dictation to download a missing model — the user should
+   * download from Settings → Local Models before relying on it.
    */
-  private async transcribeWithLocalModel(audioBuffer: Buffer): Promise<{ text: string; isAssistant: boolean; model: string } | null> {
+  private async transcribeWithLocalModel(
+    audioBuffer: Buffer,
+    opts: { allowMidFlightDownload?: boolean } = {}
+  ): Promise<{ text: string; isAssistant: boolean; model: string } | null> {
     try {
       const settings = AppSettingsService.getInstance().getSettings();
       const modelId = settings.localModelId || 'tiny.en';
 
-      // Check if it's a Parakeet model (Sherpa-ONNX)
       const isParakeet = PARAKEET_MODELS.some(m => m.id === modelId);
-      console.log(`🦜 [FastAssistant] Local model check - modelId: ${modelId}, isParakeet: ${isParakeet}`);
 
       if (isParakeet) {
-        console.log(`🦜 [FastAssistant] Using Sherpa-ONNX model: ${modelId}`);
         Logger.info(`🦜 [FastAssistant] Using Sherpa-ONNX model: ${modelId}`);
-
         try {
-          console.log(`🦜 [FastAssistant] Importing sherpa-onnx-transcriber...`);
-          const { SherpaOnnxTranscriber } = await import('./sherpa-onnx-transcriber');
-          console.log(`🦜 [FastAssistant] Import successful, getting instance...`);
-          const sherpa = SherpaOnnxTranscriber.getInstance();
-          console.log(`🦜 [FastAssistant] Got instance, calling transcribeFromBuffer...`);
-
-          const result = await sherpa.transcribeFromBuffer(audioBuffer);
-          console.log(`🦜 [FastAssistant] transcribeFromBuffer returned:`, result);
-
-          if (result) {
-            return result;
+          const { SherpaModelDownloader } = await import('./sherpa-model-downloader');
+          const downloader = new SherpaModelDownloader();
+          if (!downloader.isModelDownloaded(modelId)) {
+            Logger.warning(`🦜 [FastAssistant] Parakeet model ${modelId} not downloaded — skipping local`);
+            return null;
           }
-          console.log(`🦜 [FastAssistant] Sherpa returned null, falling back...`);
-          return null;
+          const { SherpaOnnxTranscriber } = await import('./sherpa-onnx-transcriber');
+          const sherpa = SherpaOnnxTranscriber.getInstance();
+          const result = await sherpa.transcribeFromBuffer(audioBuffer);
+          return result || null;
         } catch (sherpaError) {
-          console.error(`🦜 [FastAssistant] Sherpa-ONNX error:`, sherpaError);
-          Logger.error(`🦜 [FastAssistant] Sherpa-ONNX error:`, sherpaError);
+          Logger.error('🦜 [FastAssistant] Sherpa-ONNX error:', sherpaError);
           return null;
         }
       }
 
-      // Default to Whisper
       Logger.info(`🎤 [FastAssistant] Using Local Whisper model: ${modelId}`);
       const { LocalWhisperTranscriber } = await import('./local-whisper-transcriber');
       const localWhisper = new LocalWhisperTranscriber();
 
-      // Check if model is downloaded
       if (!localWhisper.isModelDownloaded(modelId)) {
-        Logger.warning(`🎤 [FastAssistant] Model ${modelId} not downloaded, attempting download...`);
-        const downloaded = await localWhisper.downloadModel(modelId, (percent, downloaded, total) => {
-          Logger.info(`🎤 [FastAssistant] Downloading: ${percent}% (${downloaded}/${total} MB)`);
+        if (!opts.allowMidFlightDownload) {
+          Logger.warning(`🎤 [FastAssistant] Whisper model ${modelId} not downloaded — skipping local`);
+          return null;
+        }
+        Logger.warning(`🎤 [FastAssistant] Whisper model ${modelId} not downloaded, attempting download...`);
+        const downloaded = await localWhisper.downloadModel(modelId, (percent, downloadedMB, totalMB) => {
+          Logger.info(`🎤 [FastAssistant] Downloading: ${percent}% (${downloadedMB}/${totalMB} MB)`);
         });
         if (!downloaded) {
           Logger.error(`🎤 [FastAssistant] Failed to download model ${modelId}`);
@@ -653,7 +676,6 @@ export class FastAssistantTranscriber {
       }
 
       const result = await localWhisper.transcribeFromBuffer(audioBuffer, modelId);
-
       if (result) {
         return await this.processTranscription(result.text, result.model);
       }

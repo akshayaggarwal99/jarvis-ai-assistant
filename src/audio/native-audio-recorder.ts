@@ -57,7 +57,7 @@ export class NativeAudioRecorder {
     }
   }
 
-  async start(onAudioLevel?: (level: number) => void): Promise<void> {
+  async start(onAudioLevel?: (level: number) => void, onChunk?: (buf: Buffer) => void): Promise<void> {
     if (this.isRecording) {
       Logger.warning('⚠️ [NativeAudio] Already recording, ensuring capture is active');
       // Validate that audio capture is actually working
@@ -109,7 +109,14 @@ export class NativeAudioRecorder {
 
         // Add normalized (16k) audio data to chunks
         this.audioChunks.push(processedBuffer);
-        
+
+        // Per-chunk sink for live-streaming consumers (sherpa-onnx OnlineRecognizer).
+        // Cheap: just a function call with the 16k PCM16 buffer. Any work the sink
+        // does is on the consumer's clock, not ours.
+        if (onChunk && processedBuffer.length > 0) {
+          try { onChunk(processedBuffer); } catch (e) { /* never let sink errors break capture */ }
+        }
+
         // Calculate and report audio level
         if (this.onAudioLevel) {
           const level = this.calculateAudioLevel(processedBuffer);
@@ -162,6 +169,9 @@ export class NativeAudioRecorder {
               const processedBuffer = this.ensure16kLinear16(audioBuffer);
               this.totalOutputBytes += processedBuffer.length;
               this.audioChunks.push(processedBuffer);
+              if (onChunk && processedBuffer.length > 0) {
+                try { onChunk(processedBuffer); } catch (e) { /* ignore */ }
+              }
               if (this.onAudioLevel) {
                 const level = this.calculateAudioLevel(processedBuffer);
                 this.onAudioLevel(level);
