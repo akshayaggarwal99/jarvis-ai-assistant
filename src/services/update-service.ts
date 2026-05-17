@@ -7,6 +7,12 @@ import { execSync } from 'child_process';
 
 export class UpdateService {
   private mainWindow: BrowserWindow | null = null;
+  private periodicTimer: NodeJS.Timeout | null = null;
+  // Re-poll GitHub every 6h while the app is running. Without this, a user
+  // who never quits Jarvis would only ever see the boot-time check and miss
+  // updates released during their session.
+  private static readonly PERIODIC_INTERVAL_MS = 6 * 60 * 60 * 1000;
+  private latestUpdate: { version: string; releaseNotes: string; downloadUrl: string } | null = null;
 
   constructor() {
     Logger.info('🚀 UpdateService initialized with custom update check');
@@ -14,6 +20,13 @@ export class UpdateService {
 
   setMainWindow(window: BrowserWindow) {
     this.mainWindow = window;
+    // If the update notification was queued before the dashboard window
+    // existed, re-emit now that we finally have a destination. Avoids the
+    // race where forceCheckForUpdates resolves before setMainWindow runs
+    // and the renderer never hears about the update.
+    if (this.latestUpdate) {
+      this.notifyUpdateAvailable(this.latestUpdate);
+    }
   }
 
   // Polls the GitHub Releases API for the latest published release and
@@ -46,14 +59,27 @@ export class UpdateService {
       }
 
       Logger.info(`[UpdateService] Update available: ${latestVersion} (${asset.name})`);
-      this.notifyUpdateAvailable({
+      const update = {
         version: latestVersion,
         releaseNotes: release.body || '',
         downloadUrl: asset.browser_download_url
-      });
+      };
+      this.latestUpdate = update;
+      this.notifyUpdateAvailable(update);
     } catch (err) {
       Logger.error('[UpdateService] Update check failed:', err);
     }
+  }
+
+  // Boot + periodic. Boot check runs once; periodic catches users who keep
+  // Jarvis running for days. Idempotent — safe to call multiple times.
+  startPeriodicChecks() {
+    if (this.periodicTimer) return;
+    this.periodicTimer = setInterval(() => {
+      Logger.info('[UpdateService] Periodic update check tick');
+      this.customCheckForUpdates();
+    }, UpdateService.PERIODIC_INTERVAL_MS);
+    Logger.info(`[UpdateService] Periodic update checks scheduled every ${UpdateService.PERIODIC_INTERVAL_MS / 1000 / 60 / 60}h`);
   }
 
   private fetchLatestRelease(): Promise<any> {

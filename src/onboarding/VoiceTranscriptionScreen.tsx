@@ -3,9 +3,10 @@ import { theme } from '../styles/theme';
 
 interface VoiceTranscriptionScreenProps {
   onNext: () => void;
+  onDictationSuccess?: () => void;
 }
 
-const VoiceTranscriptionScreen: React.FC<VoiceTranscriptionScreenProps> = ({ onNext }) => {
+const VoiceTranscriptionScreen: React.FC<VoiceTranscriptionScreenProps> = ({ onNext, onDictationSuccess }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [transcriptionText, setTranscriptionText] = useState('');
@@ -150,6 +151,9 @@ const VoiceTranscriptionScreen: React.FC<VoiceTranscriptionScreenProps> = ({ onN
         success: hasText,
         word_count: hasText ? transcriptText.trim().split(/\s+/).length : 0
       });
+    }
+    if (hasText) {
+      onDictationSuccess?.();
     }
 
     if (transcriptText?.trim() && transcriptText !== lastProcessedTranscriptionRef.current) {

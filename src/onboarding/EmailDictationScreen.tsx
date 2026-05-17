@@ -3,9 +3,10 @@ import { theme } from '../styles/theme';
 
 interface EmailDictationScreenProps {
   onNext: () => void;
+  onDictationSuccess?: () => void;
 }
 
-const EmailDictationScreen: React.FC<EmailDictationScreenProps> = ({ onNext }) => {
+const EmailDictationScreen: React.FC<EmailDictationScreenProps> = ({ onNext, onDictationSuccess }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [transcriptionText, setTranscriptionText] = useState('');
@@ -148,7 +149,10 @@ const EmailDictationScreen: React.FC<EmailDictationScreenProps> = ({ onNext }) =
       success: hasText,
       word_count: hasText ? text.trim().split(/\s+/).length : 0
     });
-  }, []);
+    if (hasText) {
+      onDictationSuccess?.();
+    }
+  }, [onDictationSuccess]);
 
   // Handle transcription state changes - optimized with debug logging and immediate state reset
   const handleTranscriptionStateChange = useCallback((isTranscribing: boolean) => {

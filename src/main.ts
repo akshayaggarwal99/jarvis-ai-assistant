@@ -1809,6 +1809,7 @@ app.whenReady().then(async () => {
   startupOptimizer.deferTask(async () => {
     // Check for updates after a delay (force in dev mode for testing)
     updateService.forceCheckForUpdates();
+    updateService.startPeriodicChecks();
 
     // Only initialize Jarvis if we have saved auth state, otherwise wait for user login
     const savedAuthState = loadAuthState();

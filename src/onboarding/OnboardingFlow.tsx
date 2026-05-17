@@ -16,12 +16,13 @@ const viewedStepsThisLaunch = new Set<string>();
 
 interface OnboardingStep {
   id: string;
-  component: React.ComponentType<{ 
-    onNext: () => void; 
+  component: React.ComponentType<{
+    onNext: () => void;
     onPermissionsChange?: (allGranted: boolean) => void;
     onCorePermissionsChange?: (coreGranted: boolean) => void;
     onApiKeysChange?: (hasKeys: boolean) => void;
     onNameChange?: (name: string) => void;
+    onDictationSuccess?: () => void;
   }>;
 }
 
@@ -428,7 +429,22 @@ const OnboardingFlow: React.FC<{ onComplete: () => void }> = ({ onComplete }) =>
   const [hasApiKeys, setHasApiKeys] = useState(false);
   const [userName, setUserName] = useState('');
   const [isTransitioning, setIsTransitioning] = useState(false);
+  // Sticky once true — set the moment ANY tutorial dictation succeeds so the
+  // user only has to prove it once. Drives the canContinue gate on the
+  // tutorial steps; analytics shows 96% of onboarders never press Fn after
+  // finishing the tour, so gating Continue on a real dictation is the lever.
+  const [hasDictatedInOnboarding, setHasDictatedInOnboarding] = useState(false);
+  const dictationSuccessLoggedRef = React.useRef(false);
   const { user, loading } = useAuth();
+
+  const handleDictationSuccess = React.useCallback(() => {
+    setHasDictatedInOnboarding(true);
+    if (!dictationSuccessLoggedRef.current) {
+      dictationSuccessLoggedRef.current = true;
+      const api = (window as any).electronAPI;
+      api?.posthogCapture?.('onboarding_first_dictation_success', {});
+    }
+  }, []);
 
   // Load existing userName on mount
   useEffect(() => {
@@ -558,8 +574,28 @@ const OnboardingFlow: React.FC<{ onComplete: () => void }> = ({ onComplete }) =>
       // Only require microphone and accessibility - notifications are optional
       return corePermissionsGranted;
     }
+    // voice-tutorial (5), email-tutorial (6), tour (7) — block until the
+    // user has actually pressed Fn and gotten a transcript at least once.
+    // 96% of users who finished old onboarding never dictated again; the
+    // tour was an info screen with no forcing function. This is it.
+    if (currentStep === 5 || currentStep === 6 || currentStep === 7) {
+      return hasDictatedInOnboarding;
+    }
     return true;
   };
+
+  // Pre-warm the local model the moment a user lands on a tutorial step.
+  // Belt + suspenders: ApiKeySetupScreen already calls preloadLocalModel
+  // when the user explicitly picks a model, but users who skip the picker
+  // (default localModelId / cloud-only) wouldn't have warmed anything. By
+  // calling here we also cover the case where useLocalModel got toggled
+  // on after the api-keys step. IPC handler is a no-op when local is off.
+  useEffect(() => {
+    if (currentStep === 4 || currentStep === 5) {
+      const api = (window as any).electronAPI;
+      api?.preloadLocalModel?.().catch(() => { /* fire-and-forget */ });
+    }
+  }, [currentStep]);
 
   const CurrentStepComponent = steps[currentStep].component;
 
@@ -585,12 +621,13 @@ const OnboardingFlow: React.FC<{ onComplete: () => void }> = ({ onComplete }) =>
       {/* Main content */}
       <div className="h-screen pt-20 pb-24 overflow-y-auto">
         <div className={`min-h-full flex items-center justify-center py-4 transition-all duration-300 ${isTransitioning ? 'opacity-0 transform translate-x-4' : 'opacity-100 transform translate-x-0'}`}>
-          <CurrentStepComponent 
-            onNext={nextStep} 
+          <CurrentStepComponent
+            onNext={nextStep}
             onPermissionsChange={setAllPermissionsGranted}
             onCorePermissionsChange={setCorePermissionsGranted}
             onApiKeysChange={setHasApiKeys}
             onNameChange={setUserName}
+            onDictationSuccess={handleDictationSuccess}
           />
         </div>
       </div>
@@ -612,20 +649,27 @@ const OnboardingFlow: React.FC<{ onComplete: () => void }> = ({ onComplete }) =>
               <div></div>
             )}
             
-            <button 
-              onClick={nextStep} 
-              disabled={!canContinue() || loading}
-              className="bg-white text-black px-6 py-2.5 rounded-lg font-medium hover:bg-white/90 hover:scale-105 active:scale-95 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center space-x-2 shadow-lg text-sm"
-              style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-            >
-              <span>
-                {loading ? 'Please sign in first...' : 
-                 currentStep === steps.length - 1 ? 'Get Started' : 'Continue'}
-              </span>
-              {!loading && (
-                <span className="material-icons-outlined text-base">arrow_forward</span>
+            <div className="flex items-center gap-3">
+              {!hasDictatedInOnboarding && (currentStep === 5 || currentStep === 6 || currentStep === 7) && (
+                <span className="text-xs text-white/60 hidden sm:inline">
+                  Hold Fn and speak once to continue
+                </span>
               )}
-            </button>
+              <button
+                onClick={nextStep}
+                disabled={!canContinue() || loading}
+                className="bg-white text-black px-6 py-2.5 rounded-lg font-medium hover:bg-white/90 hover:scale-105 active:scale-95 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center space-x-2 shadow-lg text-sm"
+                style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+              >
+                <span>
+                  {loading ? 'Please sign in first...' :
+                   currentStep === steps.length - 1 ? 'Get Started' : 'Continue'}
+                </span>
+                {!loading && (
+                  <span className="material-icons-outlined text-base">arrow_forward</span>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>
