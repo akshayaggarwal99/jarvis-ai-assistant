@@ -1,5 +1,5 @@
 import { Logger } from '../core/logger';
-import { BrowserWindow, app } from 'electron';
+import { BrowserWindow, app, shell } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as https from 'https';
@@ -236,53 +236,86 @@ export class UpdateService {
       
     } catch (error) {
       Logger.error('❌ Download/install error:', error);
-      
-      // Notify renderer of download error
+
       if (this.mainWindow) {
         this.mainWindow.webContents.send('update-download-error', { error: error.message });
       }
+      // Safety net: even if the in-app download failed, open the GitHub
+      // releases page in the user's browser so they always have a way out.
+      try {
+        await shell.openExternal('https://github.com/akshayaggarwal99/jarvis-ai-assistant/releases/latest');
+      } catch { /* nothing we can do */ }
     }
   }
 
+  // GitHub release asset URLs (browser_download_url) always 302 to a
+  // signed objects.githubusercontent.com URL. The previous version of this
+  // method rejected anything that wasn't 200, which silently killed every
+  // in-app download. Follow up to 5 redirects.
   private async downloadFile(url: string, destinationPath: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const file = fs.createWriteStream(destinationPath);
-      
-      https.get(url, (response) => {
-        if (response.statusCode !== 200) {
-          reject(new Error(`Failed to download: ${response.statusCode}`));
+      let settled = false;
+      const fail = (err: Error) => {
+        if (settled) return;
+        settled = true;
+        try { file.close(); } catch { /* */ }
+        fs.unlink(destinationPath, () => { /* best-effort */ });
+        reject(err);
+      };
+
+      const go = (currentUrl: string, redirectCount = 0) => {
+        if (redirectCount > 5) {
+          fail(new Error('Too many redirects while downloading update'));
           return;
         }
-        
-        const totalSize = parseInt(response.headers['content-length'] || '0', 10);
-        let downloadedSize = 0;
-        
-        response.on('data', (chunk) => {
-          downloadedSize += chunk.length;
-          const progress = Math.round((downloadedSize / totalSize) * 100);
-          
-          // Send progress to renderer
-          if (this.mainWindow) {
-            this.mainWindow.webContents.send('update-progress', { percent: progress });
+        Logger.info(`[UpdateService] GET ${currentUrl}`);
+        const req = https.get(currentUrl, {
+          headers: { 'User-Agent': 'Jarvis-AI-Assistant-Updater' }
+        }, (response) => {
+          const status = response.statusCode || 0;
+          if ([301, 302, 303, 307, 308].includes(status)) {
+            const next = response.headers.location;
+            if (!next) {
+              fail(new Error(`Redirect ${status} without Location header`));
+              return;
+            }
+            // Drain so the socket can be reused / closed cleanly.
+            response.resume();
+            const absolute = next.startsWith('http') ? next : new URL(next, currentUrl).toString();
+            go(absolute, redirectCount + 1);
+            return;
           }
+          if (status !== 200) {
+            fail(new Error(`Failed to download: ${status}`));
+            return;
+          }
+
+          const totalSize = parseInt(response.headers['content-length'] || '0', 10);
+          let downloadedSize = 0;
+          response.on('data', (chunk) => {
+            downloadedSize += chunk.length;
+            if (this.mainWindow && totalSize > 0) {
+              const percent = Math.round((downloadedSize / totalSize) * 100);
+              this.mainWindow.webContents.send('update-progress', { percent });
+            }
+          });
+          response.pipe(file);
+          file.on('finish', () => {
+            if (settled) return;
+            settled = true;
+            file.close();
+            Logger.info(`[UpdateService] Download completed (${downloadedSize} bytes)`);
+            resolve();
+          });
+          file.on('error', (err) => fail(err));
+          response.on('error', (err) => fail(err));
         });
-        
-        response.pipe(file);
-        
-        file.on('finish', () => {
-          file.close();
-          Logger.info('✅ Download completed');
-          resolve();
-        });
-        
-        file.on('error', (err) => {
-          fs.unlink(destinationPath, () => {}); // Delete partial file
-          reject(err);
-        });
-        
-      }).on('error', (err) => {
-        reject(err);
-      });
+        req.setTimeout(60_000, () => req.destroy(new Error('Download request stalled')));
+        req.on('error', (err) => fail(err));
+      };
+
+      go(url);
     });
   }
 

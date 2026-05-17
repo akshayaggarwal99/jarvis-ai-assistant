@@ -37,10 +37,17 @@ export class UpdateIPCHandlers {
       }
     });
     
-    ipcMain.handle('download-update', (_, { downloadUrl, version }) => {
+    ipcMain.handle('download-update', async (_, { downloadUrl, version }) => {
       Logger.info('📥 Download update requested:', version);
-      if (this.updateService) {
-        this.updateService.downloadUpdate(downloadUrl, version);
+      if (!this.updateService) {
+        return { ok: false, reason: 'no-update-service' };
+      }
+      try {
+        await this.updateService.downloadUpdate(downloadUrl, version);
+        return { ok: true };
+      } catch (err: any) {
+        Logger.error('[IPC] download-update failed:', err);
+        return { ok: false, error: err?.message || 'unknown' };
       }
     });
     
