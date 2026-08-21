@@ -185,8 +185,8 @@ Or just use it and tell one friend. That's enough.
 ## ⭐ Star History
 
 <p align="center">
-  <a href="https://star-history.com/#akshayaggarwal99/jarvis-ai-assistant&Date">
-    <img src="https://api.star-history.com/svg?repos=akshayaggarwal99/jarvis-ai-assistant&type=Date" width="600" />
+  <a href="https://star-history.dera.page/#akshayaggarwal99/jarvis-ai-assistant&Date">
+    <img src="https://star-history.dera.page/svg?repos=akshayaggarwal99/jarvis-ai-assistant&type=Date" width="600" />
   </a>
 </p>
 
