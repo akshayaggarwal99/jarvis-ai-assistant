@@ -2,6 +2,7 @@ import { shell } from 'electron';
 import { Logger } from '../core/logger';
 import { AICommandParser, ParsedIntent } from './ai-command-parser';
 import { intelligentCommandParser, ParsedCommand } from './intelligent-command-parser';
+import { isSafeExternalUrl } from '../security/url-policy';
 
 export interface BrowserAction {
   type: 'navigate' | 'search' | 'play_video' | 'play_music' | 'social_action';
@@ -556,6 +557,10 @@ export class SmartBrowserService {
   private async handleGeneric(action: BrowserAction): Promise<boolean> {
     try {
       if (action.url) {
+        if (!isSafeExternalUrl(action.url)) {
+          Logger.warning('[SmartBrowser] Blocked unsafe URL');
+          return false;
+        }
         await shell.openExternal(action.url);
         Logger.success(`🌐 Opened: ${action.url}`);
         return true;

@@ -3,7 +3,22 @@ import { BrowserWindow, app, shell } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as https from 'https';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
+
+const MAX_UPDATE_BYTES = 500 * 1024 * 1024;
+
+const isAllowedUpdateUrl = (value: string): boolean => {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || url.username || url.password) return false;
+    if (url.hostname === 'github.com') {
+      return url.pathname.startsWith('/akshayaggarwal99/jarvis-ai-assistant/releases/download/');
+    }
+    return ['release-assets.githubusercontent.com', 'objects.githubusercontent.com'].includes(url.hostname);
+  } catch {
+    return false;
+  }
+};
 
 export class UpdateService {
   private mainWindow: BrowserWindow | null = null;
@@ -231,7 +246,14 @@ export class UpdateService {
     Logger.info('📥 Starting automatic update download and installation...');
     
     try {
-      const tempDir = path.join(require('os').tmpdir(), 'jarvis-update');
+      if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version) || !isAllowedUpdateUrl(downloadUrl)) {
+        throw new Error('Update metadata failed validation');
+      }
+      if (process.env.ENABLE_AUTO_UPDATE_INSTALL !== 'true') {
+        throw new Error('Automatic update installation is disabled; use the signed GitHub release instead');
+      }
+
+      const tempDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'jarvis-update-'));
       const dmgPath = path.join(tempDir, `jarvis-${version}.dmg`);
       
       // Create temp directory
@@ -256,6 +278,7 @@ export class UpdateService {
       try {
         await shell.openExternal('https://github.com/akshayaggarwal99/jarvis-ai-assistant/releases/latest');
       } catch { /* nothing we can do */ }
+      throw error;
     }
   }
 
@@ -278,6 +301,10 @@ export class UpdateService {
       const go = (currentUrl: string, redirectCount = 0) => {
         if (redirectCount > 5) {
           fail(new Error('Too many redirects while downloading update'));
+          return;
+        }
+        if (!isAllowedUpdateUrl(currentUrl)) {
+          fail(new Error('Update redirect target is not allowed'));
           return;
         }
         Logger.info(`[UpdateService] GET ${currentUrl}`);
@@ -303,9 +330,19 @@ export class UpdateService {
           }
 
           const totalSize = parseInt(response.headers['content-length'] || '0', 10);
+          if (totalSize > MAX_UPDATE_BYTES) {
+            response.destroy(new Error('Update exceeds maximum allowed size'));
+            fail(new Error('Update exceeds maximum allowed size'));
+            return;
+          }
           let downloadedSize = 0;
           response.on('data', (chunk) => {
             downloadedSize += chunk.length;
+            if (downloadedSize > MAX_UPDATE_BYTES) {
+              response.destroy(new Error('Update exceeds maximum allowed size'));
+              fail(new Error('Update exceeds maximum allowed size'));
+              return;
+            }
             if (this.mainWindow && totalSize > 0) {
               const percent = Math.round((downloadedSize / totalSize) * 100);
               this.mainWindow.webContents.send('update-progress', { percent });
@@ -335,7 +372,7 @@ export class UpdateService {
     
     try {
       // Mount the DMG
-      const mountResult = execSync(`hdiutil mount "${dmgPath}"`, { encoding: 'utf8' });
+      const mountResult = execFileSync('/usr/bin/hdiutil', ['mount', dmgPath], { encoding: 'utf8' });
       Logger.info(`🔍 Mount output: ${mountResult}`);
       
       // Extract mount point more reliably
@@ -408,38 +445,38 @@ export class UpdateService {
       // code signature, xattrs, and notarization ticket; plain `cp -R`
       // strips these on macOS and Gatekeeper will refuse to relaunch).
       const stagingPath = path.join(require('os').tmpdir(), `jarvis-update-${version}.app`);
-      if (fs.existsSync(stagingPath)) execSync(`rm -rf "${stagingPath}"`);
-      execSync(`ditto "${sourceApp}" "${stagingPath}"`);
+      if (fs.existsSync(stagingPath)) fs.rmSync(stagingPath, { recursive: true, force: true });
+      execFileSync('/usr/bin/ditto', [sourceApp, stagingPath]);
 
       // Move existing bundle aside as backup, then move staged into place.
       // Two mv calls are atomic on the same filesystem so we never have a
       // window where /Applications/<App>.app is missing on failure.
       const backupPath = `${appBundle}.backup`;
-      if (fs.existsSync(backupPath)) execSync(`rm -rf "${backupPath}"`);
-      execSync(`mv "${appBundle}" "${backupPath}"`);
+      if (fs.existsSync(backupPath)) fs.rmSync(backupPath, { recursive: true, force: true });
+      execFileSync('/bin/mv', [appBundle, backupPath]);
       try {
-        execSync(`mv "${stagingPath}" "${appBundle}"`);
+        execFileSync('/bin/mv', [stagingPath, appBundle]);
       } catch (mvErr) {
         // Roll back so user isn't left without an app.
         Logger.error('❌ Move-into-place failed, rolling back:', mvErr);
-        try { execSync(`mv "${backupPath}" "${appBundle}"`); } catch { /* */ }
+        try { execFileSync('/bin/mv', [backupPath, appBundle]); } catch { /* */ }
         throw mvErr;
       }
 
       // Verify the new bundle is signed and Gatekeeper-acceptable BEFORE
       // we relaunch. If verification fails, restore from backup.
       try {
-        execSync(`codesign --verify --deep --strict "${appBundle}"`, { stdio: 'pipe' });
+        execFileSync('/usr/bin/codesign', ['--verify', '--deep', '--strict', appBundle], { stdio: 'pipe' });
       } catch (verifyErr) {
         Logger.error('❌ Code signature verification failed, restoring backup:', verifyErr);
-        execSync(`rm -rf "${appBundle}"`);
-        execSync(`mv "${backupPath}" "${appBundle}"`);
+        fs.rmSync(appBundle, { recursive: true, force: true });
+        execFileSync('/bin/mv', [backupPath, appBundle]);
         throw new Error('Update bundle failed code signature verification');
       }
 
       // Cleanup successful: drop the backup, unmount, remove DMG.
-      try { execSync(`rm -rf "${backupPath}"`); } catch { /* non-fatal */ }
-      try { execSync(`hdiutil unmount "${mountPoint}"`); } catch { /* non-fatal */ }
+      try { fs.rmSync(backupPath, { recursive: true, force: true }); } catch { /* non-fatal */ }
+      try { execFileSync('/usr/bin/hdiutil', ['unmount', mountPoint]); } catch { /* non-fatal */ }
       try { fs.unlinkSync(dmgPath); } catch { /* non-fatal */ }
 
       Logger.info('✅ Update installed successfully');

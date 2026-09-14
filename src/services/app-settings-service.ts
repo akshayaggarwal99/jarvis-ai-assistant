@@ -2,6 +2,7 @@ import { app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { defaultDictationPrompt, defaultEmailFormattingPrompt, defaultAssistantPrompt } from '../prompts/prompts';
+import { SecretName, SecretStore } from './secret-store';
 
 interface AppSettings {
   audioFeedback: boolean;
@@ -69,21 +70,16 @@ export class AppSettingsService {
   private getDefaultSettings(): AppSettings {
     return {
       audioFeedback: false,
-      // Default to launching Jarvis on Mac login for fresh installs.
-      // PostHog 30d retention shows 91% of users dictate on exactly one
-      // day and never return — most never re-launch because they forget
-      // the app exists. Auto-start keeps Fn dictation a keypress away
-      // every day. Existing users keep whatever they had — see
-      // loadSettings() migration logic.
-      showOnStartup: true,
-      analytics: true,
+      // Privacy-sensitive behavior must be explicitly enabled by the user.
+      showOnStartup: false,
+      analytics: false,
       hotkey: 'fn',
-      aiPostProcessing: true,
-      useDeepgramStreaming: true,
+      aiPostProcessing: false,
+      useDeepgramStreaming: false,
 
       // Unified defaults
       useLocalModel: false,
-      localModelId: 'tiny.en', // Default to Whisper Tiny (or whatever is preferred)
+      localModelId: 'sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8',
 
       downloadedParakeetModels: [],
       privacyConsentGiven: false, // User must explicitly consent
@@ -145,15 +141,7 @@ export class AppSettingsService {
 
         return settings;
       }
-      // Fresh install path: write the new defaults to disk + apply the
-      // login-item side effect so macOS actually starts Jarvis next boot.
-      const defaults = this.getDefaultSettings();
-      try {
-        if (defaults.showOnStartup) {
-          this.updateAutoLaunch(true);
-        }
-      } catch { /* */ }
-      return defaults;
+      return this.getDefaultSettings();
     } catch (error) {
       console.error('[AppSettings] Failed to load settings:', error);
     }
@@ -168,7 +156,13 @@ export class AppSettingsService {
         fs.mkdirSync(dir, { recursive: true });
       }
 
-      fs.writeFileSync(this.settingsPath, JSON.stringify(this.settings, null, 2));
+      const persisted = { ...this.settings } as Record<string, unknown>;
+      for (const name of this.getSecretNames()) {
+        delete persisted[name];
+      }
+
+      fs.writeFileSync(this.settingsPath, JSON.stringify(persisted, null, 2), { mode: 0o600 });
+      fs.chmodSync(this.settingsPath, 0o600);
     } catch (error) {
       console.error('[AppSettings] Failed to save settings:', error);
     }
@@ -180,6 +174,27 @@ export class AppSettingsService {
   public getSettings(): AppSettings {
     // Always reload from disk to get fresh settings
     this.settings = this.loadSettings();
+    const secretStore = SecretStore.getInstance();
+    const legacySecrets: Partial<Record<SecretName, string>> = {};
+    for (const name of this.getSecretNames()) {
+      const legacyValue = this.settings[name]?.trim();
+      if (legacyValue) {
+        legacySecrets[name] = legacyValue;
+      }
+    }
+
+    if (Object.keys(legacySecrets).length > 0) {
+      try {
+        secretStore.setMany(legacySecrets);
+        this.saveSettings();
+      } catch {
+        // Keep legacy credentials available in memory when OS encryption is unavailable.
+      }
+    }
+
+    for (const name of this.getSecretNames()) {
+      this.settings[name] = secretStore.get(name) ?? this.settings[name];
+    }
     return { ...this.settings };
   }
 
@@ -187,7 +202,19 @@ export class AppSettingsService {
    * Update specific settings
    */
   public updateSettings(updates: Partial<AppSettings>): void {
-    this.settings = { ...this.settings, ...updates };
+    const sanitizedUpdates = { ...updates };
+    const secretUpdates: Partial<Record<SecretName, string | undefined>> = {};
+    for (const name of this.getSecretNames()) {
+      if (sanitizedUpdates[name] !== undefined) {
+        secretUpdates[name] = sanitizedUpdates[name];
+        delete sanitizedUpdates[name];
+      }
+    }
+    if (Object.keys(secretUpdates).length > 0) {
+      SecretStore.getInstance().setMany(secretUpdates);
+    }
+
+    this.settings = { ...this.settings, ...sanitizedUpdates };
     this.saveSettings();
 
     // Handle auto-launch setting change
@@ -199,9 +226,9 @@ export class AppSettingsService {
     // readiness. Re-broadcast so the renderer can clear (or re-show) the
     // setup banner without waiting for the next Fn-press.
     const setupRelevant =
-      updates.openaiApiKey !== undefined ||
-      updates.deepgramApiKey !== undefined ||
-      updates.geminiApiKey !== undefined ||
+      secretUpdates.openaiApiKey !== undefined ||
+      secretUpdates.deepgramApiKey !== undefined ||
+      secretUpdates.geminiApiKey !== undefined ||
       updates.useLocalModel !== undefined ||
       updates.localModelId !== undefined;
     if (setupRelevant) {
@@ -210,6 +237,17 @@ export class AppSettingsService {
         try { SetupStatusService.getInstance().broadcast(); } catch { /* */ }
       }).catch(() => { /* */ });
     }
+  }
+
+  private getSecretNames(): SecretName[] {
+    return [
+      'openaiApiKey',
+      'deepgramApiKey',
+      'anthropicApiKey',
+      'geminiApiKey',
+      'awsAccessKeyId',
+      'awsSecretAccessKey'
+    ];
   }
 
   /**

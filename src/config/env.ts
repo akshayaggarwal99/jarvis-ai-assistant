@@ -7,9 +7,10 @@ let loaded = false;
 
 const findEnvFile = (): string | null => {
   const candidates = [
+    path.resolve(process.cwd(), '.env.local'),
     path.resolve(process.cwd(), '.env'),
-    path.resolve(__dirname, '../../.env'),
-    path.resolve(process.cwd(), '.env.local')
+    path.resolve(__dirname, '../../.env.local'),
+    path.resolve(__dirname, '../../.env')
   ];
 
   for (const candidate of candidates) {

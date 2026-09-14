@@ -3,6 +3,7 @@ import { z } from "zod";
 import { appLauncherService } from "../services/app-launcher-service";
 import { smartBrowserService } from "../services/smart-browser-service";
 import { Logger } from "../core/logger";
+import { execFile } from 'child_process';
 
 /**
  * App Launcher Tool for Jarvis Agent
@@ -29,13 +30,12 @@ export const appLauncherTool = tool(
           await new Promise(resolve => setTimeout(resolve, 1000));
           
           // Use AppleScript to type the text (for macOS)
-          const { exec } = require('child_process');
-          const escapedText = textToWrite.replace(/'/g, "\\'");
-          const script = `osascript -e 'tell application "System Events" to keystroke "${escapedText}"'`;
+          const escapedText = textToWrite.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+          const script = `tell application "System Events" to keystroke "${escapedText}"`;
           
           try {
             await new Promise((resolve, reject) => {
-              exec(script, (error: any, stdout: any, stderr: any) => {
+              execFile('/usr/bin/osascript', ['-e', script], { timeout: 10000 }, (error: any, stdout: any) => {
                 if (error) {
                   Logger.error('❌ [AppLauncher] Text input failed:', error);
                   reject(error);

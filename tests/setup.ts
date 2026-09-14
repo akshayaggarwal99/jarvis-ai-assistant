@@ -64,43 +64,6 @@ jest.mock('electron', () => ({
   }
 }));
 
-// Mock Firebase Storage with Analytics
-jest.mock('../src/storage/firebase-storage', () => ({
-  FirebaseStorage: jest.fn().mockImplementation(() => ({
-    setUserId: jest.fn(),
-    saveSession: jest.fn(),
-    getStats: jest.fn().mockResolvedValue(null),
-    getUserSessions: jest.fn().mockResolvedValue([]),
-    trackEvent: jest.fn()
-  }))
-}));
-
-// Mock Firebase
-jest.mock('firebase/app', () => ({
-  initializeApp: jest.fn()
-}));
-
-jest.mock('firebase/firestore', () => ({
-  getFirestore: jest.fn(),
-  doc: jest.fn(),
-  setDoc: jest.fn(),
-  getDoc: jest.fn(),
-  updateDoc: jest.fn(),
-  collection: jest.fn(),
-  addDoc: jest.fn(),
-  query: jest.fn(),
-  where: jest.fn(),
-  limit: jest.fn(),
-  getDocs: jest.fn()
-}));
-
-jest.mock('firebase/analytics', () => ({
-  getAnalytics: jest.fn(),
-  logEvent: jest.fn(),
-  setUserId: jest.fn(),
-  setUserProperties: jest.fn()
-}));
-
 // Mock child_process
 jest.mock('child_process', () => ({
   spawn: jest.fn(),

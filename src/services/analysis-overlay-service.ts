@@ -89,14 +89,18 @@ export class AnalysisOverlayService {
       focusable: true, // Allow focusing for text input - we'll manage click-through differently
       acceptFirstMouse: false, // Don't accept first mouse to prevent accidental activation
       webPreferences: {
-        nodeIntegration: true,
-        contextIsolation: false
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: true,
+        preload: path.join(__dirname, 'overlay-preload.js')
       }
     });
     
     // Load the analysis overlay HTML file
     Logger.info(`◆ Loading overlay from: ${finalOverlayPath}`);
     
+    overlayWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    overlayWindow.webContents.on('will-navigate', event => event.preventDefault());
     overlayWindow.loadFile(finalOverlayPath);
     overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     // Don't set always on top to prevent blocking clicks

@@ -2,6 +2,10 @@ declare module 'node-record-lpcm16' {
   export function record(options: any): any;
 }
 
+declare module 'whisper-node-addon' {
+  export function transcribe(options: Record<string, unknown>): Promise<string[][] | string>;
+}
+
 interface ElectronAPI {
   getStats: () => Promise<any>;
   dictationRecent: (limit?: number) => Promise<{ sessions: any[]; stats: any | null }>;
