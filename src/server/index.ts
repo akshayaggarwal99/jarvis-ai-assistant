@@ -2,11 +2,14 @@ import Fastify, { FastifyInstance } from 'fastify';
 import fetch, { Response, RequestInit, Headers } from 'node-fetch';
 import { loadEnv, getEnv } from '../config/env';
 import { Logger } from '../core/logger';
+import { isAllowedProviderUrl } from '../security/url-policy';
+import { timingSafeEqual } from 'crypto';
 
 loadEnv();
 
 const port = parseInt(getEnv('JARVIS_SERVER_PORT') ?? '34115', 10);
-const enableProxy = (getEnv('ENABLE_LOCAL_PROXY') ?? 'true') !== 'false';
+const proxyToken = getEnv('JARVIS_PROXY_TOKEN')?.trim();
+const enableProxy = getEnv('ENABLE_LOCAL_PROXY') === 'true' && Boolean(proxyToken);
 
 const KEY_ENV_MAP: Record<string, string> = {
   openai: 'OPENAI_API_KEY',
@@ -17,8 +20,8 @@ const KEY_ENV_MAP: Record<string, string> = {
 
 type ProxyPayload = {
   url: string;
-  options?: RequestInit;
-  key?: string;
+  method?: 'GET' | 'POST';
+  body?: string;
 };
 
 const resolveApiKey = (provider: string): string | undefined => {
@@ -38,53 +41,64 @@ const ensureKey = (provider: string): string => {
   return key;
 };
 
+const isAuthorized = (authorization?: string): boolean => {
+  if (!proxyToken || !authorization?.startsWith('Bearer ')) return false;
+  const supplied = Buffer.from(authorization.slice('Bearer '.length));
+  const expected = Buffer.from(proxyToken);
+  return supplied.length === expected.length && timingSafeEqual(supplied, expected);
+};
+
 const forwardRequest = async (provider: string, payload: ProxyPayload): Promise<Response> => {
   if (!enableProxy) {
-    throw new Error('Local proxy is disabled. Set ENABLE_LOCAL_PROXY=true to enable proxying.');
+    throw new Error('Local proxy requires ENABLE_LOCAL_PROXY=true and JARVIS_PROXY_TOKEN.');
   }
 
-  const { url, options = {}, key } = payload;
-  if (!url) {
-    throw new Error('Missing url in proxy request payload.');
+  const { url, method = 'POST', body } = payload;
+  if (!url || !isAllowedProviderUrl(provider, url)) {
+    throw new Error('URL is not an approved endpoint for this provider.');
   }
 
-  const headers = new Headers(options.headers);
+  const headers = new Headers();
 
   if (provider === 'openai') {
-    headers.set('Authorization', `Bearer ${key ?? ensureKey('openai')}`);
-    headers.set('Content-Type', headers.get('Content-Type') || 'application/json');
+    headers.set('Authorization', `Bearer ${ensureKey('openai')}`);
+    headers.set('Content-Type', 'application/json');
   }
 
   if (provider === 'deepgram') {
-    headers.set('Authorization', `Token ${key ?? ensureKey('deepgram')}`);
+    headers.set('Authorization', `Token ${ensureKey('deepgram')}`);
   }
 
-  return fetch(url, { ...options, headers });
+  if (provider === 'anthropic') {
+    headers.set('x-api-key', ensureKey('anthropic'));
+    headers.set('anthropic-version', '2023-06-01');
+    headers.set('Content-Type', 'application/json');
+  }
+
+  if (provider === 'gemini') {
+    headers.set('x-goog-api-key', ensureKey('gemini'));
+    headers.set('Content-Type', 'application/json');
+  }
+
+  return fetch(url, { method, body: method === 'POST' ? body : undefined, headers });
 };
 
-const buildServer = (): FastifyInstance => {
-  const app = Fastify({ logger: true });
+export const buildServer = (): FastifyInstance => {
+  const app = Fastify({ logger: true, bodyLimit: 1024 * 1024 });
 
   app.get('/health', async () => ({ status: 'ok' }));
-
-  app.get('/api/keys/:provider', async (request, reply) => {
-    const provider = (request.params as { provider: string }).provider;
-    const key = resolveApiKey(provider);
-
-    if (!key) {
-      reply.code(404);
-      return { error: `${provider} key not configured` };
-    }
-
-    return { apiKey: key };
-  });
 
   app.post('/api/proxy/:provider', async (request, reply) => {
     const provider = (request.params as { provider: string }).provider;
 
     if (!enableProxy) {
       reply.code(403);
-      return { error: 'Local proxy is disabled' };
+      return { error: 'Local proxy is disabled or missing JARVIS_PROXY_TOKEN' };
+    }
+
+    if (!isAuthorized(request.headers.authorization)) {
+      reply.code(401);
+      return { error: 'Unauthorized' };
     }
 
     if (!KEY_ENV_MAP[provider]) {
@@ -97,11 +111,10 @@ const buildServer = (): FastifyInstance => {
       const bodyText = await response.text();
 
       reply.code(response.status);
-      response.headers.forEach((headerValue, headerKey) => {
-        if (headerValue) {
-          reply.header(headerKey, headerValue);
-        }
-      });
+      const contentType = response.headers.get('content-type');
+      const requestId = response.headers.get('x-request-id');
+      if (contentType) reply.header('content-type', contentType);
+      if (requestId) reply.header('x-request-id', requestId);
       return bodyText;
     } catch (error: any) {
       Logger.error('Proxy error:', error);
@@ -116,7 +129,7 @@ const buildServer = (): FastifyInstance => {
 export const start = async () => {
   const server = buildServer();
   try {
-    await server.listen({ port, host: '0.0.0.0' });
+    await server.listen({ port, host: '127.0.0.1' });
     Logger.success(`🔌 Local server running on http://localhost:${port}`);
     
     // Handle graceful shutdown
@@ -137,8 +150,9 @@ export const start = async () => {
   }
 };
 
-// Auto-start when run directly
-start().catch(error => {
-  Logger.error('Fatal error:', error);
-  process.exit(1);
-});
+if (require.main === module) {
+  start().catch(error => {
+    Logger.error('Fatal error:', error);
+    process.exit(1);
+  });
+}

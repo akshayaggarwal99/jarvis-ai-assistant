@@ -1,11 +1,12 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { execFile } from 'child_process';
 import { platform } from 'os';
 import { Logger } from '../core/logger';
 import * as path from 'path';
 import * as fs from 'fs';
 
-const execAsync = promisify(exec);
+const playFile = (executable: string, args: string[], callback?: (error: Error | null) => void): void => {
+  execFile(executable, args, { timeout: 10000 }, error => callback?.(error));
+};
 
 /**
  * Simple sound player for immediate audio feedback
@@ -44,18 +45,18 @@ export class SoundPlayer {
       if (platform() === 'darwin') {
         // macOS: Use afplay with system sound for minimal latency
         // Using Hero - the original notification sound
-        exec('afplay /System/Library/Sounds/Hero.aiff -v 0.3', (error) => {
+        playFile('/usr/bin/afplay', ['/System/Library/Sounds/Hero.aiff', '-v', '0.3'], (error) => {
           if (error) {
             // Fallback to Tink if Hero doesn't exist
-            exec('afplay /System/Library/Sounds/Tink.aiff -v 0.3');
+            playFile('/usr/bin/afplay', ['/System/Library/Sounds/Tink.aiff', '-v', '0.3']);
           }
         });
       } else if (platform() === 'win32') {
         // Windows: Use PowerShell beep (non-blocking)
-        exec('powershell -c "[console]::beep(350,80); [console]::beep(500,80)"');
+        playFile('powershell.exe', ['-NoProfile', '-Command', '[console]::beep(350,80); [console]::beep(500,80)']);
       } else {
         // Linux: Try paplay or beep command
-        exec('paplay /usr/share/sounds/freedesktop/stereo/message.oga || echo -e "\\a"');
+        playFile('paplay', ['/usr/share/sounds/freedesktop/stereo/message.oga']);
       }
     } finally {
       // Reset playing flag after a short delay
@@ -83,13 +84,13 @@ export class SoundPlayer {
     try {
       if (platform() === 'darwin') {
         // macOS: Use Pop sound for stop - matches the original downward "poop" tone
-        exec('afplay /System/Library/Sounds/Pop.aiff -v 0.4');
+        playFile('/usr/bin/afplay', ['/System/Library/Sounds/Pop.aiff', '-v', '0.4']);
       } else if (platform() === 'win32') {
         // Windows: Lower pitched beep
-        exec('powershell -c "[console]::beep(250,100)"');
+        playFile('powershell.exe', ['-NoProfile', '-Command', '[console]::beep(250,100)']);
       } else {
         // Linux: Try different sound or beep
-        exec('paplay /usr/share/sounds/freedesktop/stereo/complete.oga || echo -e "\\a"');
+        playFile('paplay', ['/usr/share/sounds/freedesktop/stereo/complete.oga']);
       }
     } finally {
       // Reset playing flag after a short delay
@@ -149,14 +150,14 @@ export class SoundPlayer {
         
         if (soundPath) {
           Logger.info('🎵 Playing custom confetti-pop.mp3 sound from:', soundPath);
-          exec(`afplay "${soundPath}" -v 0.8`, (error) => {
+          playFile('/usr/bin/afplay', [soundPath, '-v', '0.8'], (error) => {
             if (error) {
               Logger.warning('Failed to play custom sound, falling back to system sound:', error);
               // Fallback to system sound
-              exec('afplay /System/Library/Sounds/Glass.aiff -v 0.6', (fallbackError) => {
+              playFile('/usr/bin/afplay', ['/System/Library/Sounds/Glass.aiff', '-v', '0.6'], (fallbackError) => {
                 if (fallbackError) {
                   Logger.warning('Glass.aiff also failed, trying Ping.aiff:', fallbackError);
-                  exec('afplay /System/Library/Sounds/Ping.aiff -v 0.6');
+                  playFile('/usr/bin/afplay', ['/System/Library/Sounds/Ping.aiff', '-v', '0.6']);
                 }
               });
             } else {
@@ -167,11 +168,11 @@ export class SoundPlayer {
           Logger.warning('🎵 Custom sound not found in any path, using Glass.aiff system sound');
           Logger.debug('🎵 Searched paths:', possiblePaths);
           // Fallback to Glass sound if custom file doesn't exist
-          exec('afplay /System/Library/Sounds/Glass.aiff -v 0.6', (error) => {
+          playFile('/usr/bin/afplay', ['/System/Library/Sounds/Glass.aiff', '-v', '0.6'], (error) => {
             if (error) {
               Logger.warning('Glass.aiff failed, trying Ping.aiff:', error);
               // Final fallback to Ping
-              exec('afplay /System/Library/Sounds/Ping.aiff -v 0.6', (pingError) => {
+              playFile('/usr/bin/afplay', ['/System/Library/Sounds/Ping.aiff', '-v', '0.6'], (pingError) => {
                 if (pingError) {
                   Logger.error('All celebration sounds failed:', pingError);
                 }
@@ -183,10 +184,10 @@ export class SoundPlayer {
         }
       } else if (platform() === 'win32') {
         // Windows: Ascending beep sequence for celebration
-        exec('powershell -c "[console]::beep(330,150); [console]::beep(440,150); [console]::beep(550,300)"');
+        playFile('powershell.exe', ['-NoProfile', '-Command', '[console]::beep(330,150); [console]::beep(440,150); [console]::beep(550,300)']);
       } else {
         // Linux: Try celebration sound or multiple beeps
-        exec('paplay /usr/share/sounds/freedesktop/stereo/complete.oga || echo -e "\\a\\a\\a"');
+        playFile('paplay', ['/usr/share/sounds/freedesktop/stereo/complete.oga']);
       }
     } finally {
       // Reset playing flag after a longer delay for celebration sound

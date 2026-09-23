@@ -1,6 +1,7 @@
 import { Logger } from '../core/logger';
 import { SecureAPIService } from './secure-api-service';
 import { AppSettingsService } from './app-settings-service';
+import { isSafeLoopbackHttpUrl } from '../security/url-policy';
 
 export interface ParsedIntent {
   action: 'search' | 'open' | 'navigate' | 'play';
@@ -68,6 +69,9 @@ export class CloudCommandParserService {
     command: string,
     settings: { ollamaUrl: string; ollamaModel: string }
   ): Promise<ParsedIntent | null> {
+    if (!isSafeLoopbackHttpUrl(settings.ollamaUrl)) {
+      throw new Error('Only a local Ollama server is allowed');
+    }
     const prompt = this.buildPrompt(command);
 
     const response = await fetch(`${settings.ollamaUrl}/api/chat`, {
@@ -177,6 +181,9 @@ Examples:
     if (settings.useOllama) {
       // Try to ping Ollama
       try {
+        if (!settings.ollamaUrl || !isSafeLoopbackHttpUrl(settings.ollamaUrl)) {
+          throw new Error('Only a local Ollama server is allowed');
+        }
         const response = await fetch(`${settings.ollamaUrl}/api/tags`, {
           method: 'GET',
           signal: AbortSignal.timeout(2000) // Use a short timeout to check availability
@@ -210,4 +217,3 @@ Examples:
     // No-op in local build
   }
 }
-

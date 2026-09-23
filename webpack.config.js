@@ -454,6 +454,36 @@ module.exports = [
       ]
     }
   },
+  // Restricted preload for suggestion, waveform, and analysis windows
+  {
+    mode: 'production',
+    target: 'electron-preload',
+    entry: './src/overlay-preload.ts',
+    output: {
+      path: path.resolve(__dirname, 'dist'),
+      filename: 'overlay-preload.js'
+    },
+    devtool: 'source-map',
+    resolve: {
+      extensions: ['.ts', '.js']
+    },
+    module: {
+      rules: [
+        {
+          test: /\.ts$/,
+          use: {
+            loader: 'ts-loader',
+            options: {
+              transpileOnly: true,
+              configFile: false,
+              compilerOptions: { noEmit: false, skipLibCheck: true, strict: false }
+            }
+          },
+          exclude: /node_modules/
+        }
+      ]
+    }
+  },
   // React Dashboard
   {
     mode: 'development',
@@ -495,7 +525,7 @@ module.exports = [
         },
         {
           test: /\.css$/,
-          use: ['style-loader', 'css-loader']
+          use: ['style-loader', 'css-loader', 'postcss-loader']
         }
       ]
     },

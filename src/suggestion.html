@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
     <style>
         * {
             box-sizing: border-box;
@@ -132,7 +133,7 @@
 
     <script>
         // Sentry disabled in open-source build
-        const { ipcRenderer } = require('electron');
+        const ipcRenderer = window.jarvisOverlay;
         
         const closeSuggestion = document.getElementById('closeSuggestion');
         const suggestionTitle = document.getElementById('suggestionTitle');

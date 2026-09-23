@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; media-src 'self'; img-src 'self' data:">
     <style>
         body {
             margin: 0;
@@ -370,7 +371,7 @@
 
     <script>
         // Sentry disabled in open-source build
-        const { ipcRenderer } = require('electron');
+        const ipcRenderer = window.jarvisOverlay;
         
         const container = document.getElementById('container');
         const bar = document.getElementById('bar');

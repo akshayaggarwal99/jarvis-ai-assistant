@@ -1,10 +1,11 @@
-import { exec, spawn } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import { Logger } from '../core/logger';
 import { shell } from 'electron';
 import { AICommandParser } from './ai-command-parser';
+import { isSafeExternalUrl } from '../security/url-policy';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export interface AppLaunchIntent {
   action: 'open_app' | 'open_website' | 'search_web' | 'app_action';
@@ -83,7 +84,7 @@ export class AppLauncherService {
   private async scanInstalledApps(): Promise<void> {
     try {
       // Get applications from /Applications folder
-      const { stdout } = await execAsync('find /Applications -name "*.app" -maxdepth 2');
+      const { stdout } = await execFileAsync('/usr/bin/find', ['/Applications', '-maxdepth', '2', '-name', '*.app']);
       const appPaths = stdout.trim().split('\n').filter(path => path);
 
       for (const appPath of appPaths) {
@@ -113,7 +114,7 @@ export class AppLauncherService {
    */
   private async getBundleId(appPath: string): Promise<string> {
     try {
-      const { stdout } = await execAsync(`defaults read "${appPath}/Contents/Info.plist" CFBundleIdentifier`);
+      const { stdout } = await execFileAsync('/usr/bin/defaults', ['read', `${appPath}/Contents/Info.plist`, 'CFBundleIdentifier']);
       return stdout.trim();
     } catch {
       return '';
@@ -513,7 +514,7 @@ export class AppLauncherService {
     
     try {
       // First try opening by the mapped app name directly
-      await execAsync(`open -a "${appName}"`);
+      await execFileAsync('/usr/bin/open', ['-a', appName]);
       Logger.success(`✅ [AppLauncher] Successfully opened ${appName}`);
       return true;
     } catch (error) {
@@ -526,7 +527,7 @@ export class AppLauncherService {
         try {
           Logger.info(`🚀 [AppLauncher] Found app match: ${app.name}`);
           // Use the app name instead of bundle ID
-          await execAsync(`open -a "${app.name}"`);
+          await execFileAsync('/usr/bin/open', ['-a', app.name]);
           
           // Update usage stats
           app.usageCount++;
@@ -543,7 +544,7 @@ export class AppLauncherService {
       const variations = this.getAppNameVariations(appName);
       for (const variation of variations) {
         try {
-          await execAsync(`open -a "${variation}"`);
+          await execFileAsync('/usr/bin/open', ['-a', variation]);
           Logger.success(`✅ [AppLauncher] Successfully opened ${variation} (variation)`);
           return true;
         } catch (variationError) {
@@ -622,6 +623,10 @@ export class AppLauncherService {
    */
   private async openWebsite(website: string): Promise<boolean> {
     try {
+      if (!isSafeExternalUrl(website)) {
+        Logger.warning('[AppLauncher] Blocked unsafe website URL');
+        return false;
+      }
       await shell.openExternal(website);
       Logger.success(`✅ Opened ${website}`);
       return true;

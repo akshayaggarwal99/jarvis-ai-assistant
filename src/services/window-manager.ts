@@ -6,6 +6,11 @@ import { AppSettingsService } from './app-settings-service';
 
 export type WindowType = 'suggestion' | 'waveform' | 'dashboard' | 'analysisOverlay';
 
+const lockLocalNavigation = (window: BrowserWindow): void => {
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  window.webContents.on('will-navigate', event => event.preventDefault());
+};
+
 export class WindowManager {
   private static instance: WindowManager;
   private windows: Map<WindowType, BrowserWindow | null> = new Map();
@@ -49,11 +54,14 @@ export class WindowManager {
       show: false,
       skipTaskbar: true,
       webPreferences: {
-        nodeIntegration: true,
-        contextIsolation: false
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: true,
+        preload: path.join(__dirname, 'overlay-preload.js')
       }
     });
     
+    lockLocalNavigation(window);
     window.loadFile(this.getResourcePath('suggestion.html'));
     window.setVisibleOnAllWorkspaces(true);
     window.setAlwaysOnTop(true, 'floating');
@@ -85,11 +93,14 @@ export class WindowManager {
       skipTaskbar: true,
       hasShadow: false,
       webPreferences: {
-        nodeIntegration: true,
-        contextIsolation: false
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: true,
+        preload: path.join(__dirname, 'overlay-preload.js')
       }
     });
     
+    lockLocalNavigation(window);
     window.loadFile(this.getResourcePath('waveform.html'));
     window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     window.setAlwaysOnTop(true, 'screen-saver');
@@ -132,6 +143,7 @@ export class WindowManager {
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
+        sandbox: true,
         preload: path.join(__dirname, 'preload.js')
       },
       title: 'Jarvis Dashboard',
@@ -144,6 +156,7 @@ export class WindowManager {
     });
     
     // Load the HTML file
+    lockLocalNavigation(window);
     window.loadFile(this.getResourcePath('dashboard-react.html'));
     
     // Handle window closed event
@@ -186,8 +199,10 @@ export class WindowManager {
           focusable: true,
           acceptFirstMouse: true,
           webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false
+            nodeIntegration: false,
+            contextIsolation: true,
+            sandbox: true,
+            preload: path.join(__dirname, 'overlay-preload.js')
           }
         });
         
@@ -203,6 +218,7 @@ export class WindowManager {
         const overlayPath = this.getResourcePath('analysis-overlay.html');
         Logger.info(`◆ Loading overlay from: ${overlayPath}`);
         
+        lockLocalNavigation(window);
         window.loadFile(overlayPath);
         window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
         window.setAlwaysOnTop(true, 'screen-saver', 1);

@@ -1,10 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <!-- Highlight.js for code syntax highlighting -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.2/marked.min.js"></script>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
     <style>
         * {
             margin: 0;
@@ -769,7 +766,7 @@
 
     <script>
         // Sentry disabled in open-source build
-        const { ipcRenderer } = require('electron');
+        const ipcRenderer = window.jarvisOverlay;
         
         function closeOverlay() {
             ipcRenderer.send('hide-analysis-overlay');
@@ -826,41 +823,13 @@
             const messageDiv = document.createElement('div');
             messageDiv.className = `chat-message ${role}`;
             
-            // Format content as markdown for assistant messages
-            if (role === 'assistant') {
-                messageDiv.innerHTML = renderMarkdown(content);
-            } else {
-                messageDiv.innerHTML = renderMarkdown(content);
-            }
+            messageDiv.textContent = content;
             
             messagesContainer.appendChild(messageDiv);
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
             
             // Store in history
             chatHistory.push({ role, content });
-        }
-
-        function renderMarkdown(text) {
-            try {
-                // Configure marked options
-                marked.setOptions({
-                    breaks: true,
-                    gfm: true,
-                    highlight: function(code, lang) {
-                        if (lang && hljs.getLanguage(lang)) {
-                            try {
-                                return hljs.highlight(code, { language: lang }).value;
-                            } catch (err) {}
-                        }
-                        return hljs.highlightAuto(code).value;
-                    }
-                });
-                
-                return marked.parse(text);
-            } catch (error) {
-                console.error('Markdown parsing error:', error);
-                return text.replace(/\n/g, '<br>');
-            }
         }
 
         function sendMessage() {
@@ -943,8 +912,7 @@
         }
 
         function formatAnalysisText(text) {
-            // Use the same markdown renderer for consistency
-            return renderMarkdown(text);
+            return text;
         }
 
         function showAnalysis(text) {
@@ -980,7 +948,7 @@
             
             // Format and show analysis text
             const formattedText = formatAnalysisText(text);
-            analysisText.innerHTML = formattedText;
+            analysisText.textContent = formattedText;
             analysisText.style.display = 'block';
             
             // Initialize auto-resize for chat input after a short delay
@@ -999,12 +967,7 @@
                 overlay.classList.add('expanded');
             }, 100);
             
-            analysisText.innerHTML = `
-                <div class="error-state">
-                    <h3>Analysis Failed</h3>
-                    <p>${error}</p>
-                </div>
-            `;
+            analysisText.textContent = `Analysis Failed\n\n${String(error)}`;
         }
 
         // Listen for analysis results
@@ -1023,7 +986,7 @@
             const titleElement = document.querySelector('.overlay-title');
             if (titleElement) {
                 // Always show "Jarvis" for both conversation and regular assistant responses
-                titleElement.innerHTML = 'Jarvis';
+                titleElement.textContent = 'Jarvis';
             }
         }
 
@@ -1038,7 +1001,7 @@
             // Clear any previous content completely
             const analysisText = document.getElementById('analysisText');
             if (analysisText) {
-                analysisText.innerHTML = '';
+                analysisText.textContent = '';
                 analysisText.style.display = 'none';
             }
             

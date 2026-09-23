@@ -1,5 +1,7 @@
 import { Logger } from '../core/logger';
 import { AppSettingsService } from './app-settings-service';
+import { SecretName, SecretStore } from './secret-store';
+import { isAllowedProviderUrl } from '../security/url-policy';
 
 const cleanKey = (value?: string | null) => (value ?? '').trim() || undefined;
 
@@ -59,6 +61,9 @@ export class SecureAPIService {
   }
 
   async proxyOpenAIRequest(url: string, options: RequestInit = {}): Promise<Response> {
+    if (!isAllowedProviderUrl('openai', url)) {
+      throw new Error('Blocked unapproved OpenAI endpoint');
+    }
     const key = await this.getProviderKey('openai');
     const headers = new Headers(options.headers);
     headers.set('Authorization', `Bearer ${key}`);
@@ -67,6 +72,9 @@ export class SecureAPIService {
   }
 
   async proxyDeepgramRequest(url: string, options: RequestInit = {}): Promise<Response> {
+    if (!isAllowedProviderUrl('deepgram', url)) {
+      throw new Error('Blocked unapproved Deepgram endpoint');
+    }
     const key = await this.getProviderKey('deepgram');
     const headers = new Headers(options.headers);
     headers.set('Authorization', `Token ${key}`);
@@ -85,24 +93,18 @@ export class SecureAPIService {
       return cached.key;
     }
 
-    // Get key from app settings (user-configured via UI)
-    try {
-      const appSettings = AppSettingsService.getInstance();
-      const settings = appSettings.getSettings();
-      const settingsKeyMap: Record<string, string | undefined> = {
-        openai: settings.openaiApiKey,
-        deepgram: settings.deepgramApiKey,
-        anthropic: settings.anthropicApiKey,
-        gemini: settings.geminiApiKey,
-      };
-      const settingsValue = cleanKey(settingsKeyMap[cacheKey]);
-      if (settingsValue) {
-        Logger.debug(`[SecureAPI] Using ${cacheKey} key from app settings`);
-        this.cache.set(cacheKey, { key: settingsValue, timestamp: now });
-        return settingsValue;
-      }
-    } catch (error) {
-      Logger.debug(`[SecureAPI] App settings not available for ${cacheKey}`);
+    const secretNameMap: Record<string, SecretName> = {
+      openai: 'openaiApiKey',
+      deepgram: 'deepgramApiKey',
+      anthropic: 'anthropicApiKey',
+      gemini: 'geminiApiKey'
+    };
+    const secretName = secretNameMap[cacheKey];
+    const settingsValue = secretName ? cleanKey(SecretStore.getInstance().get(secretName)) : undefined;
+    if (settingsValue) {
+      Logger.debug(`[SecureAPI] Using configured ${cacheKey} credential`);
+      this.cache.set(cacheKey, { key: settingsValue, timestamp: now });
+      return settingsValue;
     }
 
     throw new Error(`${cacheKey} API key is not configured. Please add it in Settings.`);

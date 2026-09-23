@@ -4,6 +4,7 @@ import { AuthService } from '../services/auth-service';
 import { WindowManager } from '../services/window-manager';
 import { OptimizedAnalyticsManager } from '../analytics/optimized-analytics-manager';
 import { nodeDictionaryService } from '../services/node-dictionary';
+import { isSafeExternalUrl } from '../security/url-policy';
 
 // Global registry to track registered handlers and prevent duplicates
 const registeredHandlers = new Set<string>();
@@ -277,6 +278,10 @@ export class IPCHandlers {
   private registerMiscHandlers(): void {
     safeRegisterHandler('open-external', async (_, url: string) => {
       try {
+        if (!isSafeExternalUrl(url)) {
+          Logger.warning('[IPCHandlers] Blocked unsafe external URL');
+          return false;
+        }
         await shell.openExternal(url);
         return true;
       } catch (error) {
@@ -287,7 +292,11 @@ export class IPCHandlers {
     
     safeRegisterHandler('shell-open-external', async (_, url: string) => {
       try {
-        Logger.info(`🌐 [IPCHandlers] Opening external URL: ${url}`);
+        if (!isSafeExternalUrl(url)) {
+          Logger.warning('[IPCHandlers] Blocked unsafe external URL');
+          return false;
+        }
+        Logger.info('🌐 [IPCHandlers] Opening approved external URL');
         await shell.openExternal(url);
         Logger.info(`✅ [IPCHandlers] Successfully opened external URL`);
         return true;

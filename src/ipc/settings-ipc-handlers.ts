@@ -10,6 +10,21 @@ import { Logger } from '../core/logger';
 import { AppSettingsService } from '../services/app-settings-service';
 import { PushToTalkService } from '../input/push-to-talk-refactored';
 import fetch from 'node-fetch';
+import { MASKED_SECRET, SecretName, SecretStore } from '../services/secret-store';
+import { isSafeLoopbackHttpUrl } from '../security/url-policy';
+
+const SECRET_FIELDS: SecretName[] = [
+  'openaiApiKey', 'deepgramApiKey', 'anthropicApiKey',
+  'geminiApiKey', 'awsAccessKeyId', 'awsSecretAccessKey'
+];
+
+const forRenderer = <T extends Record<string, any>>(settings: T): T => {
+  const sanitized = { ...settings };
+  for (const field of SECRET_FIELDS) {
+    delete sanitized[field];
+  }
+  return sanitized;
+};
 
 type HotkeyCallback = () => void;
 
@@ -54,7 +69,7 @@ export class SettingsIPCHandlers {
     // Get app settings (legacy)
     ipcMain.handle('app:get-settings', async () => {
       try {
-        return appSettings.getSettings();
+        return forRenderer(appSettings.getSettings());
       } catch (error) {
         Logger.error('[SettingsIPC] Failed to get app settings:', error);
         return null;
@@ -64,7 +79,8 @@ export class SettingsIPCHandlers {
     // Update app settings (legacy)
     ipcMain.handle('app:update-settings', async (_, settings) => {
       try {
-        Logger.info('[SettingsIPC] Received app:update-settings:', JSON.stringify(settings));
+        Logger.info('[SettingsIPC] Received app settings update');
+        settings = forRenderer(settings || {});
         const previousSettings = appSettings.getSettings();
 
         appSettings.updateSettings(settings);
@@ -116,13 +132,14 @@ export class SettingsIPCHandlers {
 
     // Get app settings (new API)
     ipcMain.handle('app-settings:get', async () => {
-      return appSettings.getSettings();
+      return forRenderer(appSettings.getSettings());
     });
 
     // Update app settings (new API)
     ipcMain.handle('app-settings:update', async (_, updates) => {
       try {
-        Logger.info('[SettingsIPC] Received settings update:', updates);
+        Logger.info('[SettingsIPC] Received settings update');
+        updates = forRenderer(updates || {});
         const previousSettings = appSettings.getSettings();
 
         appSettings.updateSettings(updates);
@@ -132,20 +149,20 @@ export class SettingsIPCHandlers {
           const currentSettings = appSettings.getSettings();
           if (this.pushToTalkService) {
             // Only enable streaming if local whisper is also disabled
-            const shouldStream = currentSettings.useDeepgramStreaming && !currentSettings.useLocalWhisper;
+            const shouldStream = currentSettings.useDeepgramStreaming && !currentSettings.useLocalModel;
             this.pushToTalkService.setStreamingMode(shouldStream);
-            Logger.info(`[SettingsIPC] Streaming mode updated - Deepgram: ${currentSettings.useDeepgramStreaming}, LocalWhisper: ${currentSettings.useLocalWhisper}, Streaming: ${shouldStream}`);
+            Logger.info(`[SettingsIPC] Streaming mode updated - Deepgram: ${currentSettings.useDeepgramStreaming}, LocalModel: ${currentSettings.useLocalModel}, Streaming: ${shouldStream}`);
           }
         }
 
-        // Handle local whisper changes - affects streaming mode
-        if ('useLocalWhisper' in updates) {
+        // Handle local model changes - affects streaming mode
+        if ('useLocalModel' in updates) {
           const currentSettings = appSettings.getSettings();
           if (this.pushToTalkService) {
-            // When local whisper is enabled, disable streaming
-            const shouldStream = currentSettings.useDeepgramStreaming && !currentSettings.useLocalWhisper;
+            // Cloud streaming is disabled while a local model is selected.
+            const shouldStream = currentSettings.useDeepgramStreaming && !currentSettings.useLocalModel;
             this.pushToTalkService.setStreamingMode(shouldStream);
-            Logger.info(`[SettingsIPC] Local Whisper changed - Streaming mode: ${shouldStream}`);
+            Logger.info(`[SettingsIPC] Local model changed - Streaming mode: ${shouldStream}`);
           }
         }
 
@@ -185,13 +202,14 @@ export class SettingsIPCHandlers {
     ipcMain.handle('api-keys:get', async () => {
       try {
         const settings = appSettings.getSettings();
+        const secretStore = SecretStore.getInstance();
         return {
-          openaiApiKey: settings.openaiApiKey || '',
-          deepgramApiKey: settings.deepgramApiKey || '',
-          anthropicApiKey: settings.anthropicApiKey || '',
-          geminiApiKey: settings.geminiApiKey || '',
-          awsAccessKeyId: settings.awsAccessKeyId || '',
-          awsSecretAccessKey: settings.awsSecretAccessKey || '',
+          openaiApiKey: secretStore.has('openaiApiKey') || settings.openaiApiKey ? MASKED_SECRET : '',
+          deepgramApiKey: secretStore.has('deepgramApiKey') || settings.deepgramApiKey ? MASKED_SECRET : '',
+          anthropicApiKey: secretStore.has('anthropicApiKey') || settings.anthropicApiKey ? MASKED_SECRET : '',
+          geminiApiKey: secretStore.has('geminiApiKey') || settings.geminiApiKey ? MASKED_SECRET : '',
+          awsAccessKeyId: secretStore.has('awsAccessKeyId') || settings.awsAccessKeyId ? MASKED_SECRET : '',
+          awsSecretAccessKey: secretStore.has('awsSecretAccessKey') || settings.awsSecretAccessKey ? MASKED_SECRET : '',
           awsRegion: settings.awsRegion || '',
         };
       } catch (error) {
@@ -229,6 +247,9 @@ export class SettingsIPCHandlers {
 
       try {
         const baseUrl = (url || 'http://localhost:11434').replace(/\/$/, '');
+        if (!isSafeLoopbackHttpUrl(baseUrl)) {
+          return { success: false, error: 'Only a local Ollama server is allowed' };
+        }
 
         try {
           const models = await tryFetchModels(baseUrl);

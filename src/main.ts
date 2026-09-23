@@ -67,19 +67,20 @@ import { TranscriptionService } from './services/transcription-service';
 import { AppLifecycleService } from './services/app-lifecycle-service';
 import { StartupOptimizer } from './services/startup-optimizer';
 import { LocalWhisperTranscriber } from './transcription/local-whisper-transcriber';
+import { loadEnv } from './config/env';
 
 // Load environment variables with multiple fallback paths
 // Remove hardcoded fallback - keys must come from secure service
 
 try {
-  // Try loading from current directory first
-  require('dotenv').config();
+  loadEnv();
 
-  // Set auto-paste to true by default (can be overridden in .env)
+  // Auto-paste is opt-in because it types into whichever app has focus.
   if (!process.env.AUTO_PASTE) {
-    process.env.AUTO_PASTE = 'true';
-    Logger.info('Auto-paste enabled by default (set AUTO_PASTE=false to disable)');
+    process.env.AUTO_PASTE = 'false';
   }
+  if (!process.env.LANGSMITH_TRACING) process.env.LANGSMITH_TRACING = 'false';
+  if (!process.env.LANGCHAIN_TRACING_V2) process.env.LANGCHAIN_TRACING_V2 = 'false';
 
 } catch (error) {
   Logger.warning('Error loading .env for configuration:', error);
@@ -292,11 +293,12 @@ async function initializeJarvis() {
     // Preload Whisper model for faster transcription (runs in background)
     const appSettingsForWhisper = AppSettingsService.getInstance();
     const whisperSettings = appSettingsForWhisper.getSettings();
-    if (whisperSettings.useLocalWhisper && whisperSettings.localWhisperModel) {
+    const whisperModelId = whisperSettings.localModelId;
+    if (whisperSettings.useLocalModel && whisperModelId && !whisperModelId.startsWith('sherpa-')) {
       const whisperTranscriber = new LocalWhisperTranscriber();
-      whisperTranscriber.preloadModel(whisperSettings.localWhisperModel).then(success => {
+      whisperTranscriber.preloadModel(whisperModelId).then(success => {
         if (success) {
-          Logger.success(`🎤 Whisper model '${whisperSettings.localWhisperModel}' preloaded for fast transcription`);
+          Logger.success(`🎤 Whisper model '${whisperModelId}' preloaded for fast transcription`);
         } else {
           Logger.info('🎤 Whisper model preload skipped (model not downloaded)');
         }
@@ -781,7 +783,6 @@ function startHotkeyMonitoring() {
     stopHotkeyMonitoring();
   }
 
-  Logger.info(`⚙ [Hotkey] Starting monitoring - Full settings:`, allSettings);
   Logger.info(`⚙ [Hotkey] Current hotkey from settings: ${currentHotkey}`);
 
   // Calculate if streaming should be enabled. Either:
@@ -789,8 +790,8 @@ function startHotkeyMonitoring() {
   //   - Local model is a streaming-format sherpa-onnx model (new in 1.3)
   const { STREAMING_MODELS: _STREAMING_MODELS } = require('./transcription/sherpa-models');
   const isLocalStreamingModel = allSettings.useLocalModel && _STREAMING_MODELS.some((m: { id: string }) => m.id === allSettings.localModelId);
-  const shouldUseStreaming = (allSettings.useDeepgramStreaming && !allSettings.useLocalWhisper) || isLocalStreamingModel;
-  Logger.info(`⚙ [Hotkey] Streaming decision: useDeepgramStreaming=${allSettings.useDeepgramStreaming}, useLocalWhisper=${allSettings.useLocalWhisper}, isLocalStreamingModel=${isLocalStreamingModel}, shouldUseStreaming=${shouldUseStreaming}`);
+  const shouldUseStreaming = (allSettings.useDeepgramStreaming && !allSettings.useLocalModel) || isLocalStreamingModel;
+  Logger.info(`⚙ [Hotkey] Streaming decision: cloudStreaming=${allSettings.useDeepgramStreaming}, localModel=${allSettings.useLocalModel}, localStreaming=${isLocalStreamingModel}, enabled=${shouldUseStreaming}`);
 
   // Initialize push-to-talk service (same for all keys)
   pushToTalkService = new PushToTalkService(
